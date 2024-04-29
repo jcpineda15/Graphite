@@ -92,7 +92,8 @@ vector<HaplotypePair> VCFOneParentPhased::impute_cM(
 	vector<HaplotypePair>	haps;
 	for(size_t i = 0; i < prev_haps.size(); ++i) {
 		const auto	prev_hap = prev_haps[i];
-		const auto	hap = this->impute_cM_each_sample(prev_hap, i+2, true);
+		const auto	hap = this->impute_cM_each_sample(prev_hap, i+2,
+															true, true);
 		haps.push_back(hap);
 	}
 	return haps;
@@ -173,11 +174,11 @@ STRVEC VCFOneParentPhased::collect_samples(
 	return STRVEC(set_samples.begin(), set_samples.end());
 }
 
-// samplesに対応するRecordを作る
+// make a record corresponding to samples
 VCFSmall *VCFOneParentPhased::merge(const vector<VCFOneParentPhased *>& vcfs) {
 	const STRVEC	samples = collect_samples(vcfs);
 	
-	// sampleがどのVCFのどの位置にあるか
+	// Where sample is located in which VCF
 	map<string, pair<const VCFOneParentPhased *, size_t>>	dic_pos;
 	for(auto p = vcfs.begin(); p != vcfs.end(); ++p) {
 		const VCFOneParentPhased	*vcf = *p;
@@ -185,7 +186,7 @@ VCFSmall *VCFOneParentPhased::merge(const vector<VCFOneParentPhased *>& vcfs) {
 			dic_pos[vcf->get_samples()[k]] = make_pair(vcf, k + 9);
 	}
 	
-	// 上の辞書を元にRecordを作る
+	// create records from the above dictionary
 	vector<VCFRecord *>	records;
 	for(size_t i = 0; i < vcfs.front()->size(); ++i) {
 		const STRVEC&	v1 = vcfs.front()->get_record(i)->get_v();

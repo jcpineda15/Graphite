@@ -57,7 +57,6 @@ public:
 	};
 	
 public:
-//	virtual T get_weight(Node u, Node v) const = 0;
 	virtual std::vector<Edge> collect_weighted_edges() const = 0;
 };
 

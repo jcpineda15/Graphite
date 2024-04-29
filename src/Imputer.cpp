@@ -227,32 +227,17 @@ vector<char> Imputer::create_states(const string& seq) {
 	}
 }
 
-string Imputer::impute_seq(const string& seq,
-							const vector<double>& cMs, double min_c) {
-	if(std::all_of(seq.begin(), seq.end(), [](char c) { return c == 'N'; }))
-		return string(seq.size(), '0');
-	else if(Common::is_all_same(seq))	// あとでwithout_Nにする
-		return seq;
-	
-	const vector<char>	hidden_states = { '0', '1' };
-	const vector<char>	states = Imputer::create_states(seq);
-	const string	hidden_seq = Imputer::impute(seq,
-												hidden_states, states, cMs);
-	const string	painted_seq = Imputer::paint(hidden_seq, cMs, min_c);
-	return painted_seq;
-}
-
-Matrix Imputer::compute_T(double prob, const vector<char>& hidden_states) {
-	Matrix	T;
-	for(auto p = hidden_states.begin(); p != hidden_states.end(); ++p) {
-		for(auto q = hidden_states.begin(); q != hidden_states.end(); ++q)
-			T[make_pair(*p, *q)] = *p == *q ? 1.0 - prob : prob;
+BaumWelch::TransitionMatrix Imputer::compute_T(double prob) {
+	BaumWelch::TransitionMatrix	T;
+	for(size_t h0 = 0; h0 < 2; ++h0) {
+		for(size_t h1 = 0; h1 < 2; ++h1)
+			T[h0*2+h1] = h0 == h1 ? 1.0 - prob : prob;
 	}
 	return T;
 }
 
-string Imputer::impute(const string& seq, const vector<char>& hidden_states,
-						const vector<char>& states, const vector<double>& cMs) {
+string Imputer::impute(const string& seq, const vector<double>& cMs) {
+	// Kosambi
 	vector<double>	ps;
 	for(size_t i = 0; i < cMs.size() - 1; ++i) {
 		const double	d = (cMs[i+1] - cMs[i]) / 100;
@@ -260,11 +245,10 @@ string Imputer::impute(const string& seq, const vector<char>& hidden_states,
 		ps.push_back(r);
 	}
 	
-	vector<Matrix>	Ts;
+	vector<BaumWelch::TransitionMatrix>	Ts;
 	for(auto p = ps.begin(); p != ps.end(); ++p)
-		Ts.push_back(Imputer::compute_T(*p, hidden_states));
+		Ts.push_back(Imputer::compute_T(*p));
 	
-	const string	hidden_seq = BaumWelch::impute(seq,
-												hidden_states, states, Ts);
+	const string	hidden_seq = BaumWelch::impute(seq, Ts);
 	return hidden_seq;
 }

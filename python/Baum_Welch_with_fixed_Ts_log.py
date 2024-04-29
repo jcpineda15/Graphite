@@ -138,8 +138,9 @@ def update_probabilities(seq, states, hidden_states, pi, Ts, E):
 		cum = log_sum(g[hj] for g in gamma)
 		for s in states:
 			if sum(1 for s1, g in zip(seq, gamma) if s1 == s) == 0:
-				print(seq)
-			E[(hj,s)] = log_sum(g[hj] for s1, g in zip(seq, gamma) if s1 == s) - cum
+				E[(hj,s)] = 0.0
+			else:
+				E[(hj,s)] = log_sum(g[hj] for s1, g in zip(seq, gamma) if s1 == s) - cum
 	
 #	total = log_sum(p-E[(h,seq[0])] for h, p in gamma[0].items())
 #	pi = dict((h, p-E[(h,seq[0])]-total) for h, p in gamma[0].items())

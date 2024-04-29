@@ -8,103 +8,88 @@
 using namespace std;
 
 
-BaumWelch::BaumWelch(const string& seq_,
-						const vector<char>& hidden_states_,
-						const vector<char>& states_,
-						const vector<Matrix>& Ts_) :
-								hidden_states(hidden_states_), states(states_),
-								seq(seq_),
-								Ts(modify_log(Ts_)),
-								pi(initialize_pi()),
-//								T(initialize_transition_matrix()),
-								E(initialize_emission_matrix()) {
+BaumWelch::BaumWelch(const string& seq_, const vector<TransitionMatrix>& Ts_) :
+											seq(seq_),
+											L(seq_.size()),
+											Ts(modify_log(Ts_)),
+											pi(initialize_pi()),
+											E(initialize_emission_matrix()) {
 	if(!converge_pi_E())
 		converge_pi();
 }
 
-vector<BaumWelch::Matrix> BaumWelch::modify_log(const vector<Matrix>& Ms_) {
-	vector<Matrix>	Ms;
+vector<BaumWelch::TransitionMatrix> BaumWelch::modify_log(
+										const vector<TransitionMatrix>& Ms_) {
+	vector<TransitionMatrix>	Ms;
 	for(auto p = Ms_.begin(); p != Ms_.end(); ++p) {
-		Matrix	M;
-		for(auto q = p->begin(); q != p->end(); ++q)
-			M[q->first] = Log::modified_log(q->second);
+		TransitionMatrix	M;
+		for(size_t i = 0; i < p->size(); ++i)
+			M[i] = Log::modified_log((*p)[i]);
 		Ms.push_back(M);
 	}
 	return Ms;
 }
 
-map<char,double> BaumWelch::initialize_pi() {
-	const double	prob = -std::log((double)hidden_states.size());
-	map<char,double>	probs;
-	for(auto p = hidden_states.begin(); p != hidden_states.end(); ++p)
-		probs[*p] = prob;
+std::array<double, 2> BaumWelch::initialize_pi() {
+	// dividing equally
+	const double	prob = -std::log(2.0);
+	array<double, 2>	probs { prob, prob };
 	return probs;
 }
 
-BaumWelch::Matrix BaumWelch::initialize_transition_matrix() {
-	Matrix	T;
-	const size_t	N = hidden_states.size();
-	for(auto p = hidden_states.begin(); p != hidden_states.end(); ++p) {
-		for(auto q = hidden_states.begin(); q != hidden_states.end(); ++q) {
-			set(T, *p, *q, std::log(*p == *q ? 0.9 : 0.1 / (N - 1)));
+BaumWelch::TransitionMatrix BaumWelch::initialize_transition_matrix() {
+	TransitionMatrix	T;
+	for(size_t h1 = 0; h1 < 2; ++h1) {
+		for(size_t h2 = 0; h2 < 2; ++h2) {
+			T[h1*2+h2] = std::log(h1 == h2 ? 0.9 : 0.1);
 		}
 	}
 	return T;
 }
 
-BaumWelch::Matrix BaumWelch::initialize_emission_matrix() {
+BaumWelch::EmissionMatrix BaumWelch::initialize_emission_matrix() {
 	// probability of hidden state -> state
-	Matrix	E;
-	const size_t	N = states.size();
-	for(auto p = hidden_states.begin(); p != hidden_states.end(); ++p) {
-		for(auto q = states.begin(); q != states.end(); ++q) {
-			set(E, *p, *q, std::log(*p == *q ? 0.9 : 0.1 / (N - 1)));
+	EmissionMatrix	E;
+	const size_t	N = 3;
+	for(size_t h = 0; h < 2; ++h) {
+		for(size_t s = 0; s < 3; ++s) {
+			E[s*2+h] = std::log(h == s ? 0.9 : 0.1 / (N - 1));
 		}
 	}
 	return E;
 }
 
-BaumWelch::Table BaumWelch::compute_alpha(const Matrix& A) const {
-	const size_t	L = seq.size();
+BaumWelch::Table BaumWelch::compute_alpha(const EmissionMatrix& A) const {
 	Table	a(L);	// probability of s
-	for(auto p = hidden_states.begin(); p != hidden_states.end(); ++p) {
-		auto	q = pi.find(*p);
-		assert(q != pi.end());
-		a[0][*p] = q->second + get(A, seq.c_str()[0], *p);
+	for(size_t h = 0; h < 2; ++h) {
+		a[0][h] = pi[h] + A[state(0)*2+h];
 	}
+	
 	for(size_t t = 1U; t < seq.size(); ++t) {
-		const Matrix&	T = Ts[t-1];
-		const char		s = seq.c_str()[t];
-		for(auto p = hidden_states.begin(); p != hidden_states.end(); ++p) {
-			const char	h = *p;
-			vector<double>	v;
-			for(auto q = hidden_states.begin(); q != hidden_states.end(); ++q) {
-				const char	h_prev = *q;
-				v.push_back(a[t-1][h_prev] + get(T, h_prev, h) + get(A, s, h));
-			}
-			a[t][h] = Log::sum(v);
+		const TransitionMatrix&	T = Ts[t-1];
+		const size_t	s = state(t);
+		for(size_t h = 0; h < 2; ++h) {
+			array<double, 2>	v;
+			for(size_t h_prev = 0; h_prev < 2; ++h_prev)
+				v[h_prev] = a[t-1][h_prev] + T[h_prev*2+h] + A[s*2+h];
+			a[t][h] = Log::add(v[0], v[1]);
 		}
 	}
 	return a;
 }
 
-BaumWelch::Table BaumWelch::compute_beta(const Matrix& A) const {
-	const size_t	L = seq.size();
+BaumWelch::Table BaumWelch::compute_beta(const EmissionMatrix& A) const {
 	Table	b(L);
-	for(auto p = hidden_states.begin(); p != hidden_states.end(); ++p)
-		b[L-1][*p] = 0.0;	// log(1.0)
+	b[L-1] = array<double, 2> { 0.0, 0.0 };
+	
 	for(int t = (int)L - 2; t >= 0; --t) {
-		const Matrix&	T = Ts[t];
-		const char		s = seq.c_str()[t+1];
-		for(auto p = hidden_states.begin(); p != hidden_states.end(); ++p) {
-			const char	h = *p;
-			vector<double>	v;
-			for(auto q = hidden_states.begin(); q != hidden_states.end(); ++q) {
-				const char	h_next = *q;
-				v.push_back(get(T, h, h_next) + get(A, s, h_next) +
-														b[t+1][h_next]);
-			}
-			b[t][h] = Log::sum(v);
+		const TransitionMatrix&	T = Ts[t];
+		const size_t	s = state(t + 1);
+		for(size_t h = 0; h < 2; ++h) {
+			array<double, 2>	v;
+			for(size_t h_next = 0; h_next < 2; ++h_next)
+				v[h_next] = T[h*2+h_next] + A[s*2+h_next] + b[t+1][h_next];
+			b[t][h] = Log::add(v[0], v[1]);
 		}
 	}
 	return b;
@@ -112,109 +97,79 @@ BaumWelch::Table BaumWelch::compute_beta(const Matrix& A) const {
 
 BaumWelch::Table BaumWelch::compute_gamma(
 						const Table& a, const Table& b) const {
-	Table	gamma1;
-	for(size_t t = 0; t < a.size(); ++t) {
-		auto&	a1 = a[t];
-		auto&	b1 = b[t];
-		map<char,double>	dic;
-		for(auto r = hidden_states.begin(); r != hidden_states.end(); ++r) {
-			const char	h = *r;
-			auto	pa = a1.find(h);
-			auto	pb = b1.find(h);
-			assert(pa != a1.end() && pb != b1.end());
-			dic[h] = pa->second + pb->second;
-//			dic[h] = a1[h] + b1[h];
-		}
-		gamma1.push_back(dic);
+	Table	gamma1(L);
+	for(size_t t = 0; t < L; ++t) {
+		for(size_t h = 0; h < 2; ++h)
+			gamma1[t][h] = a[t][h] + b[t][h];
 	}
 	
-	double	prob_seq;	// probability that seq is observed
-	{
-		vector<double>	v;
-		for(auto p = gamma1[0].begin(); p != gamma1[0].end(); ++p)
-			v.push_back(p->second);
-		prob_seq = Log::sum(v);
-	}
+	// probability that seq is observed
+	const double	prob_seq = Log::add(gamma1[0][0], gamma1[0][1]);
 	
-	Table	gamma;
-	for(auto p = gamma1.begin(); p != gamma1.end(); ++p) {
-		map<char,double>	dic;
-		const map<char,double>&	g = *p;
-		for(auto q = g.begin(); q != g.end(); ++q)
-			dic[q->first] = q->second - prob_seq;
-		gamma.push_back(dic);
+	Table	gamma(L);
+	for(size_t t = 0; t < L; ++t) {
+		for(size_t h = 0; h < 2; ++h)
+			gamma[t][h] = gamma1[t][h] - prob_seq;
 	}
 	
 	return gamma;
 }
 
-BaumWelch::Table BaumWelch::compute_parameters(const Matrix& A) {
+BaumWelch::Table BaumWelch::compute_parameters(const EmissionMatrix& A) {
 	// probability of s
 	const Table	a = compute_alpha(A);
 	const Table	b = compute_beta(A);
 	return compute_gamma(a, b);
 }
 
-void BaumWelch::update_probabilities(map<char,double>& pi1, Matrix& E1) {
-	const Matrix	A = reverse_probs(E);
+void BaumWelch::update_probabilities(array<double, 2>& pi1,
+										EmissionMatrix& E1) {
+	const EmissionMatrix	A = reverse_probs(E);
 	Table	gamma = compute_parameters(A);
 	pi1 = gamma[0];
 	
-	for(auto p = hidden_states.begin(); p != hidden_states.end(); ++p) {
-		const char	hj = *p;
-		vector<double>	v;
-		for(auto p = gamma.begin(); p != gamma.end(); ++p) {
-			auto	g = *p;
-			v.push_back(g[hj]);
-		}
+	for(size_t hj = 0; hj < 2; ++hj) {
+		vector<double>	v(L);
+		for(size_t t = 0; t < L; ++t)
+			v[t] = gamma[t][hj];
 		const double	cum = Log::sum(v);
-		for(auto q = states.begin(); q != states.end(); ++q) {
-			const char	s = *q;
-			vector<double>	w;
-			for(size_t t = 0U; t < seq.size(); ++t) {
-				const char	s1 = seq.c_str()[t];
-				auto	g = gamma[t];
-				if(s1 == s)
-					w.push_back(g[hj]);
-			}
-			if(w.empty())
-				continue;
-			set(E1, hj, s, Log::sum(w) - cum);
+		
+		array<vector<double>, 3>	ws;
+		for(size_t t = 0; t < L; ++t) {
+			const size_t	s = state(t);
+			ws[s].push_back(gamma[t][hj]);
+		}
+		
+		for(size_t s = 0; s < 3; ++s) {
+			if(!ws[s].empty())
+				E1[s*2+hj] = Log::sum(ws[s]) - cum;
 		}
 	}
 }
 
-bool BaumWelch::is_valid_Emission_Matrix(const Matrix& E) const {
-	for(auto p = E.begin(); p != E.end(); ++p) {
-		const auto	state = p->first;
-		const double	v = p->second;
-		if(state.first == state.second && v <= std::log(0.5))
+bool BaumWelch::is_valid_Emission_Matrix(const EmissionMatrix& E) const {
+	for(size_t h = 0; h < 2; ++h) {
+		if(E[h*2+h] <= std::log(0.5))
 			return false;
 	}
 	return true;
 }
 
-bool BaumWelch::is_near_parameters(const Matrix& E1,
-								   const map<char,double>& pi1,
-								   const Matrix& E2,
-								   const map<char,double>& pi2) const {
-	vector<double>	v1;
-	for(auto p = E1.begin(); p != E1.end(); ++p) {
-		auto	q = E2.find(p->first);
-		if(q != E2.end())
-			v1.push_back(Log::diff(p->second, q->second));
+bool BaumWelch::is_near_parameters(const EmissionMatrix& E1,
+								   const array<double, 2>& pi1,
+								   const EmissionMatrix& E2,
+								   const array<double, 2>& pi2) const {
+	vector<double>	v1(6);
+	for(size_t i = 0; i < 6; ++i) {
+		if(E1[i] == 0.0 || E2[i] == 0.0)
+			v1[i] = Log::LOGZERO;
 		else
-			v1.push_back(Log::LOGZERO);
+			v1[i] = Log::diff(E1[i], E2[i]);
 	}
 	const double	d2 = Log::sum(v1);
 	
-	vector<double>	v2;
-	for(auto p = pi1.begin(); p != pi1.end(); ++p) {
-		auto	q = pi2.find(p->first);
-		assert(q != pi2.end());
-		v2.push_back(Log::diff(p->second, q->second));
-	}
-	const double	d3 = Log::sum(v2);
+	const double	d3 = Log::add(Log::diff(pi1[0], pi2[0]),
+								  Log::diff(pi1[1], pi2[1]));
 	
 	return Log::add(d2, d3) < std::log(1e-7);
 }
@@ -222,8 +177,9 @@ bool BaumWelch::is_near_parameters(const Matrix& E1,
 bool BaumWelch::converge_pi_E() {
 	for(int i = 0; i < 100; ++i) {
 		try {
-			map<char,double>	pi1;
-			Matrix				E1;
+			array<double, 2>	pi1;
+			// if seq has not 'N', some elements of E are not updated
+			EmissionMatrix		E1 = {0.0};
 			update_probabilities(pi1, E1);
 			if(is_near_parameters(E, pi, E1, pi1))
 				break;
@@ -238,32 +194,32 @@ bool BaumWelch::converge_pi_E() {
 	return is_valid_Emission_Matrix(E);
 }
 
-BaumWelch::Matrix BaumWelch::reverse_probs(const Matrix& M) const {
-	map<char,double>	sum_observed;
-	for(auto p = states.begin(); p != states.end(); ++p) {
-		const char	s0 = *p;
-		vector<double>	v;
-		for(auto q = M.begin(); q != M.end(); ++q) {
-			const char		s = q->first.second;
-			const double	p = q->second;
-			if(s == s0)
-				v.push_back(p);
+BaumWelch::EmissionMatrix BaumWelch::reverse_probs(
+										const EmissionMatrix& M) const {
+#if 1
+	EmissionMatrix	rev_M;	// index: s*2+h
+	for(size_t s = 0; s < 3; ++s) {
+		double	sum_observed = Log::add(M[s*2], M[s*2+1]);
+		for(size_t h = 0; h < 2; ++h) {
+			rev_M[s*2+h] = M[s*2+h] - sum_observed;
 		}
-		sum_observed[s0] = Log::sum(v);
+	}
+#else
+	array<double, 3>	sum_observed;
+	for(size_t s0 = 0; s0 < 3; ++s0) {
+		sum_observed[s0] = Log::add(M[s0*2], M[s0*2+1]);
 	}
 	
-	Matrix	rev_M;
-	for(auto p = M.begin(); p != M.end(); ++p) {
-		const char	h = p->first.first;
-		const char	s = p->first.second;
-		auto	q = M.find(p->first);
-		assert(q != M.end());
-		rev_M[pair<char,char>(s, h)] = q->second - sum_observed[s];
+	EmissionMatrix	rev_M;	// index: s*2+h
+	for(size_t h = 0; h < 2; ++h) {
+		for(size_t s = 0; s < 3; ++s)
+			rev_M[s*2+h] = M[s*2+h] - sum_observed[s];
 	}
+#endif
 	return rev_M;
 }
 
-map<char,double> BaumWelch::update_pi(map<char,double>& pi) {
+array<double, 2> BaumWelch::update_pi() {
 	const auto	A = reverse_probs(E);
 	const auto	gamma = compute_parameters(A);
 	const auto	pi1 = gamma.front();
@@ -275,11 +231,10 @@ bool BaumWelch::converge_pi() {
 	E = initialize_emission_matrix();
 	for(int i = 0; i < 100; ++i) {
 		try {
-			auto	pi1 = update_pi(pi);
-			vector<double>	v;
-			for(auto p = pi.begin(); p != pi.end(); ++p)
-				v.push_back(Log::diff(p->second, pi1[p->first]));
-			if(Log::sum(v) < std::log(1e-7))
+			const auto	pi1 = update_pi();
+			double	log_s = Log::add(Log::diff(pi[0], pi1[0]),
+									 Log::diff(pi[1], pi1[1]));
+			if(log_s < std::log(1e-7))
 				break;
 			pi = pi1;
 		}
@@ -290,84 +245,64 @@ bool BaumWelch::converge_pi() {
 	return true;
 }
 
-string BaumWelch::Viterbi(const Matrix& A) const {
-	Table	table(seq.size());
-	for(auto p = hidden_states.begin(); p != hidden_states.end(); ++p) {
-		const char	h = *p;
-		auto	q = pi.find(h);
-		assert(q != pi.end());
-		table[0][h] = q->second + get(A, seq[0], h);
+string BaumWelch::Viterbi(const EmissionMatrix& A) const {
+	Table	table(L);
+	for(size_t h = 0; h < 2; ++h) {
+		table[0][h] = pi[h] + A[state(0)*2+h];
 	}
 	
-	for(size_t k = 1U; k < seq.size(); ++k) {
-		const char	s = seq[k];
-		const auto&	T = Ts[k-1];
-		for(auto p = hidden_states.begin(); p != hidden_states.end(); ++p) {
-			const char	h = *p;
-			double	max_value = Log::LOGZERO;
-			for(auto q = hidden_states.begin(); q != hidden_states.end(); ++q) {
-				const char	h0 = *q;
-				const double	v = table[k-1][h0] + get(T, h0,h) + get(A, s,h);
+	for(size_t t = 1; t < L; ++t) {
+		const size_t	s = state(t);
+		const auto&	T = Ts[t-1];
+		for(size_t h = 0; h < 2; ++h) {
+			double max_value = Log::LOGZERO;
+			for(size_t h0 = 0; h0 < 2; ++h0) {
+				const double	v = table[t-1][h0] + T[h0*2+h] + A[s*2+h];
 				max_value = std::max(max_value, v);
 			}
-			table[k][h] = max_value;
+			table[t][h] = max_value;
+		}
+	}
+	
+	for(size_t t = 1; t < L; ++t) {
+		const size_t	s = state(t);
+		const auto&		T = Ts[t-1];
+		for(size_t h = 0; h < 2; ++h) {
+			double	max_value = Log::LOGZERO;
+			for(size_t h0 = 0; h0 < 2; ++h0) {
+				const double	v = table[t-1][h0] + T[h0*2+h] + A[s*2+h];
+				max_value = std::max(max_value, v);
+			}
+			table[t][h] = max_value;
 		}
 	}
 	
 	// backtrack
-	double	prob = Log::LOGZERO;
-	char	h = '0';	// temporary
 	string	new_hidden_seq = "";
-	for(auto p = hidden_states.begin(); p != hidden_states.end(); ++p) {
-		const char	h1 = *p;
-		double		v = table.back()[h1];
-		if(v > prob) {
-			prob = v;
-			h = h1;
-		}
-	}
-	new_hidden_seq += h;
+	const auto&	v = table.back();
+	size_t	h = v[0] >= v[1] ? 0 : 1;
+	new_hidden_seq += to_char(h);
 	
-	for(size_t k = seq.size() - 1; k > 0U; --k) {
-		const char	s = seq.c_str()[k];
-		const Matrix&	T = Ts[k-1];
-		char	h1 = '0';	// temporary
-		double	prob1 = Log::LOGZERO;
-		for(auto p = hidden_states.begin(); p != hidden_states.end(); ++p) {
-			const char	h0 = *p;
-			double	v = table[k-1][h0] + get(T, h0, h) + get(A, s, h);
-			if(v > prob1) {
-				prob1 = v;
-				h1 = h0;
-			}
-		}
-		new_hidden_seq += h1;
-		h = h1;
+	for(size_t t = L-1; t > 0; --t) {
+		const size_t	s = state(t);
+		const TransitionMatrix&	T = Ts[t-1];
+		const double	v1 = table[t-1][0] + T[0*2+h] + A[s*2+h];
+		const double	v2 = table[t-1][1] + T[1*2+h] + A[s*2+h];
+		h = v1 >= v2 ? 0 : 1;
+		new_hidden_seq += to_char(h);
 	}
 	
 	std::reverse(new_hidden_seq.begin(), new_hidden_seq.end());
 	return new_hidden_seq;
 }
 
-BaumWelch::Matrix BaumWelch::reverse_emission_matrix() const {
+BaumWelch::EmissionMatrix BaumWelch::reverse_emission_matrix() const {
 	return this->reverse_probs(E);
 }
 
-double BaumWelch::get(const Matrix& M, char s1, char s2) {
-	auto	p = M.find(pair<char,char>(s1, s2));
-	assert(p != M.end());
-	return p->second;
-}
-
-void BaumWelch::set(Matrix& M, char s1, char s2, double v) {
-	M.insert(make_pair(pair<char,char>(s1, s2), v));
-}
-
 string BaumWelch::impute(const string& seq,
-							const vector<char> hidden_states,
-							const vector<char> states,
-							const vector<Matrix>& Ts) {
-	BaumWelch	BW(seq, hidden_states, states, Ts);
+							const vector<TransitionMatrix>& Ts) {
+	BaumWelch	BW(seq, Ts);
 	const auto	A = BW.reverse_emission_matrix();
 	return BW.Viterbi(A);
 }

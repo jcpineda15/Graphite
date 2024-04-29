@@ -99,6 +99,8 @@ public:
 	static VCFFamily *merge(const VCFFamily *vcf1, const VCFFamily *vcf2);
 	static VCFFamilyRecord *subset(VCFRecord *record, const STRVEC& samples,
 									const std::vector<std::size_t>& columns);
+	// Create a new VCF by obtaining the Genotypes of the parents from vcf1
+	// and the progenies from vcf2
 	static VCFFamily *create_by_two_vcfs(const VCFSmallBase *vcf1,
 										 const VCFSmallBase *vcf2,
 										 const STRVEC& samples);

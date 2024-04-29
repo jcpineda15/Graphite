@@ -36,7 +36,7 @@ class VCFFamilyRecord(VCFRecord):
 		return self.get_int_gt(1)
 	
 	def progeny_gts(self) -> list[int]:
-		return [ self.get_gt(i) for i in range(2, len(self.v) - 9) ]
+		return [ self.get_int_gt(i) for i in range(2, len(self.v) - 9) ]
 	
 	def progeny_int_gts(self) -> list[int]:
 		return [ self.get_int_gt(i) for i in range(2, len(self.v) - 9) ]
@@ -134,10 +134,12 @@ class VCFFamily(VCFBase, VCFSmallBase, VCFFamilyBase):
 		return VCFFamily(new_header, new_records)
 	
 	@staticmethod
-	def subset(record, columns):
-		v = record.v[:9] + [ record.v[c] for c in columns ]
-		samples = [ record.samples[c-9] for c in columns ]
-		return VCFFamilyRecord(v, samples)
+	def subset(record: VCFRecord, columns: list[int]) -> VCFFamilyRecord:
+		v = record.v
+		new_v = v[:9] + [ v[c] if c != -1 else './.' for c in columns ]
+		samples = [ record.samples[c-9] if c != -1 else '0'
+												for c in columns ]
+		return VCFFamilyRecord(new_v, samples)
 	
 	# [VCFFamily] -> VCFFamily
 	@staticmethod

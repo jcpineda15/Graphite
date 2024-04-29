@@ -19,10 +19,10 @@ TypeDeterminer::TypeDeterminer(size_t n, double alpha_) : N(n), alpha(alpha_) {
 	this->sort();
 }
 
-// 中心からの累積確率
+// cumulative probability from the center
 vector<pair<int, double>> TypeDeterminer::binomial(size_t M) const {
-	// Mが大きいと精度が悪くなる
-	// 本当は真ん中から計算するとよい
+	// Large M results in poor accuracy
+	// It is better to calculate from the center
 	const double	p = pow(0.5, M);
 	vector<double>	ps(1, p);
 	for(size_t n = 1; n <= M; ++n)
@@ -55,7 +55,8 @@ void TypeDeterminer::insert(size_t n0, size_t n1, size_t n2,
 }
 
 void TypeDeterminer::make_memo00() {
-	// 全部同じになるはずのパターンはその他が2割まで
+	// Patterns that should all have the same Genotype
+	// are up to 20% for all other Genotypes
 	for(size_t num_NA = 0; num_NA <= N/5; ++num_NA) {
 		for(size_t n1 = 0; n1 <= N/5 - num_NA; ++n1) {
 			for(size_t n2 = 0; n2 <= N/5 - num_NA - n1; ++n2)
@@ -89,7 +90,7 @@ void TypeDeterminer::make_memo02() {
 
 double TypeDeterminer::genotype_probability(size_t n0,
 											size_t n1, size_t n2) const {
-	// nが大きければ対数計算しなければならないかも
+	// If n is large, we may have to do logarithmic calculations
 	const size_t	n = n0 + n1 + n2;
 	const double	p0 = 0.25;
 	const double	p1 = 0.5;
@@ -106,7 +107,7 @@ double TypeDeterminer::genotype_probability(size_t n0,
 
 TypeDeterminer::PQState TypeDeterminer::initialize_state(size_t M) const {
 	const size_t	n1 = M / 2;
-	const size_t	n0 = (M - n1 + 1) / 2;	// n0 >= n2とする
+	const size_t	n0 = (M - n1 + 1) / 2;	// let n0 >= n2
 	const size_t	n2 = M - n0 - n1;
 	return create_pqstate(n0, n1, n2);
 }
@@ -162,9 +163,10 @@ vector<TypeDeterminer::PQState> TypeDeterminer::neighbor_states(
 	return neighbors;
 }
 
-// 0/1 x 0/1は難しい
+// 0/1 x 0/1 is difficult
 void TypeDeterminer::make_memo11() {
-	// 確率が大きい状態から並べて累積が1-αを超えるまで列挙する
+	// sum up from the most probable state
+	// until the accumulation exceeds 1-α(alpha)
 	for(size_t num_NA = 0; num_NA <= N/5; ++num_NA) {
 		const size_t	M = N - num_NA;
 		const PQState	pqs0 = initialize_state(M);
@@ -181,7 +183,7 @@ void TypeDeterminer::make_memo11() {
 				total_p += get<0>(pqs);
 			}
 			else {
-				// n0 > n2なので、n0 < n2の分も考える
+				// so n0 > n2, sum up probability of n0 < n2
 				const State	s1 = create_state(pqs);
 				insert(s1, ParentComb::P01x01, total_p);
 				insert(reverse_state(s1), ParentComb::P01x01, total_p);
@@ -215,7 +217,7 @@ void TypeDeterminer::make_memo12() {
 }
 
 void TypeDeterminer::make_memo22() {
-	// 全部同じになるはずのパターンはその他が2割まで
+	// same as make_memo00
 	for(size_t num_NA = 0; num_NA <= N/5; ++num_NA) {
 		for(size_t n0 = 0; n0 <= N/5 - num_NA; ++n0) {
 			for(size_t n1 = 0; n1 <= N/5 - num_NA - n0; ++n1)

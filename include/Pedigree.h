@@ -40,6 +40,7 @@ public:
 //////////////////// Family ////////////////////
 
 class Family {
+protected:
 	const std::string	mat;
 	const std::string	pat;
 	const std::vector<const Progeny *>	progenies;
@@ -50,7 +51,7 @@ public:
 							const std::vector<const Progeny *>& progs) :
 							mat(m), pat(p), progenies(progs),
 							samples(collect_samples()) { }
-	~Family();
+	virtual ~Family();
 	
 	const std::string& get_mat() const { return mat; }
 	const std::string& get_pat() const { return pat; }

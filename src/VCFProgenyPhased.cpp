@@ -9,6 +9,7 @@
 #include "../include/VCFFillable.h"
 #include "../include/Map.h"
 #include "../include/Pedigree.h"
+#include "../include/KnownFamily.h"
 #include "../include/Imputer.h"
 
 using namespace std;
@@ -89,8 +90,8 @@ vector<HaplotypePair> VCFProgenyPhased::impute_core(
 	HaplotypePair	*ptr_hap = &hap;
 	for(auto p = vcf_cMs.begin(); p != vcf_cMs.end(); ++p) {
 		VCFProgenyPhased	*vcf_cM = *p;
-		auto	hap_ = vcf_cM->impute_cM_each_sample(*ptr_hap,
-														sample_index, false);
+		auto	hap_ = vcf_cM->impute_cM_each_sample(*ptr_hap, sample_index,
+																false, true);
 		whole_haplotype_pair.push_back(hap_);
 		ptr_hap = &whole_haplotype_pair.back();
 	}
@@ -133,7 +134,7 @@ void VCFProgenyPhased::impute() {
 	const int	score2 = sum_score(hap_pairs2, vcf_cMs, sample_index);
 	const auto	hap_pairs = score1 >= score2 ? hap_pairs1 : hap_pairs2;
 	for(size_t j = 0; j < vcf_cMs.size(); ++j) {
-		vcf_cMs[j]->set_haplotype(hap_pairs[j], sample_index);
+		vcf_cMs[j]->set_haplotype(hap_pairs[j], sample_index, true);
 		vcf_cMs[j]->records.clear();
 		delete vcf_cMs[j]->ref_vcf;
 		delete vcf_cMs[j];

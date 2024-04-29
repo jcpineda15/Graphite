@@ -90,7 +90,7 @@ class UnionFindSerial:
 			v = self.parents[v]
 		return v
 	
-	def __str__(self):
+	def __str__(self) -> str:
 		def f(v: int) -> str:
 			s = str(v)
 			for child in children[v]:
@@ -98,12 +98,12 @@ class UnionFindSerial:
 					s += '\n  ' + line
 			return s
 		
-		children: Dict[int, list[int]] = { v: [] for v in self.parents.keys() }
-		for v, parent in self.parents.items():
-			if parent != v:
-				children[parent].append(v)
+		N = len(self.parents)
+		children: list[list[int]] = [ [] for v in range(N) ]
+		for v in range(N):
+			if self.parents[v] != v:
+				children[self.parents[v]].append(v)
 		
-		return '\n'.join(f(v) for v, parent in self.parents.items()
-														if v == parent)
+		return '\n'.join(f(v) for v in range(N) if self.parents[v] == v)
 
 __all__ = ['UnionFind', 'UnionFindSerial', 'Node']

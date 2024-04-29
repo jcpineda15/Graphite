@@ -100,7 +100,7 @@ public:
 	}
 	void clear_records() { records.clear(); }
 	
-	// haplotype1の各レコードのGenotypeが0なのか1なのか
+	// decide heterozygous parent haplotypes
 	std::vector<int> make_parent_haplotypes(const InvGraph& graph) const;
 	std::vector<int> create_haplotype(std::size_t v0,
 										const InvGraph& graph) const;
@@ -109,7 +109,7 @@ public:
 						determine_haplotype(const OptionImpute *option) const;
 	std::pair<std::vector<VCFHeteroHomo *>, std::vector<VCFHeteroHomoRecord *>>
 														clean(int num_threads);
-	// 共通のヘテロ親はどれだけマッチしているか
+	// How well do the common heteroparents match?
 	std::pair<int, int> match(const VCFHeteroHomo *other) const;
 	void inverse_hetero_parent_phases();
 	
@@ -128,14 +128,15 @@ private:
 	const OptionImpute *create_option(int num_threads) const;
 	
 public:
-	// FamilyごとにVCFHeteroHomoを作って親ごとに格納する
+	// Create a pair of VCFHeteroHomo for each Family
+	// and store it for each parent
 	static std::tuple<VCFHeteroHomo *, VCFHeteroHomo *,
 						std::vector<VCFHeteroHomoRecord *>>
 		make_VCFHeteroHomo(const std::vector<VCFHeteroHomoRecord *>& records,
 						   const std::vector<STRVEC>& header,
 						   const STRVEC& samples, const Map& geno_map);
-	// ヘテロ親が同じVCFを集めて補完する
-	// ついでにphaseもなるべく同じになるように変更する
+	// collect VCFs whose hetero parent is the same, and impute it
+	// and change the phase to be as same as possible
 	static ImpResult clean_vcfs(
 						const std::vector<VCFHeteroHomoRecord *>& records,
 						const std::vector<STRVEC>& header,

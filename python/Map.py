@@ -4,8 +4,7 @@ from __future__ import annotations
 # Map.py
 
 from itertools import *
-
-from typing import Iterator
+from typing import Iterator, List, Any, IO
 
 from common import *
 
@@ -19,11 +18,11 @@ class Map:
 			self.cM: float	= float(v[1])
 			self.Mbp: float	= float(v[2])
 	
-	def __init__(self, records):
-		self.records: list[MapRecord] = records
-		self.chr_maps = []
+	def __init__(self, records: List['MapRecord']):
+		self.records: List['Map.MapRecord'] = records
+		self.chr_maps: List[Map] = []
 	
-	def is_empty(self):
+	def is_empty(self) -> bool:
 		return not self.records
 	
 	def total_cM(self) -> float:
@@ -99,7 +98,7 @@ class Map:
 #################### VCFMeasurable ####################
 
 class VCFMeasurable(object):
-	def __init__(self, map_):
+	def __init__(self, map_: Map):
 		self.map: Map = map_
 	
 	def cM(self, pos: int) -> float:

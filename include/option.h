@@ -10,6 +10,7 @@
 class Option {
 public:
 	const std::string	path_vcf;
+	const std::string	path_ref_vcf;
 	const std::string	path_ped;
 	const std::string	path_map;
 	const std::vector<std::size_t>	families;
@@ -21,19 +22,24 @@ public:
 	const bool			only_large_families;
 	const bool			imputes_isolated_samples;
 	const bool			outputs_unimputed_samples;
+	const bool			corrects_isolated_samples;
 	
 public:
-	Option(const std::string& vcf, const std::string& ped,
+	Option(const std::string& vcf, const std::string& ref,
+			const std::string& ped,
 			const std::string& map, const std::vector<std::size_t>& fam,
-			const std::vector<std::size_t>& chr, int nt,
-			std::size_t lp, bool ol, bool ii, bool ou, const std::string& out) :
-									path_vcf(vcf), path_ped(ped), path_map(map),
+			const std::vector<std::size_t>& chr, int nt, std::size_t lp,
+			bool ol, bool ii, bool ou, bool ci, const std::string& out) :
+									path_vcf(vcf), path_ref_vcf(ref),
+									path_ped(ped), path_map(map),
 									families(fam), chroms(chr), num_threads(nt),
 									path_out(out), ratio(0.01), lower_progs(lp),
 									only_large_families(ol),
 									imputes_isolated_samples(ii),
-									outputs_unimputed_samples(ou)  { }
+									outputs_unimputed_samples(ou),
+									corrects_isolated_samples(ci)  { }
 	
+	bool exists_ref() const { return !path_ref_vcf.empty(); }
 	bool is_efficient_chrom(int i) const;
 	void print_info() const;
 	

@@ -24,12 +24,13 @@ ClassifyRecord *ClassifyRecord::get_instance() {
 
 pair<ParentComb, WrongType> ClassifyRecord::classify(
 									const VCFFamilyRecord *record,
-									const TypeDeterminer *td) {
+									const TypeDeterminer *td,
+									bool one_parent) {
 	const vector<int>	gts = record->get_progeny_int_gts();
 	const tuple<int, int, int>	counter = count_int_gts(gts);
 	const auto	combs = td->determine(counter);
 	return classify_record_core(combs, record->mat_int_gt(),
-												record->pat_int_gt());
+										record->pat_int_gt(), one_parent);
 }
 
 const TypeDeterminer *ClassifyRecord::get_TypeDeterminer(size_t n, double a) {
@@ -42,6 +43,7 @@ const TypeDeterminer *ClassifyRecord::get_TypeDeterminer(size_t n, double a) {
 	return td;
 }
 
+// count the numbers of 0, 1, 2
 tuple<size_t, size_t, size_t> ClassifyRecord::count_int_gts(
 											const vector<int>& gts) const {
 	vector<size_t>	ns(3, 0);
@@ -57,9 +59,10 @@ vector<ClassifyRecord::GTComb> ClassifyRecord::filter_pairs(
 	if(combs.size() == 1)
 		return combs;
 	
-	// 親の組合せの候補が複数ある場合、取れる確率が大きく違えば一つにする
-	// p0(1-p1)(1-p2)などを確率のようなものとみなす
-	vector<double>	ps(combs.size());	// p0(1-p1)(1-p2)などを格納する
+	// When there are multiple candidates for a parent combination,
+	// if the probabilities are very different, one candidate is selected.
+	// regard p0(1-p1)(1-p2) and like this as probabilities
+	vector<double>	ps(combs.size());	// store p0(1-p1)(1-p2) and like this
 	for(size_t i = 0; i < combs.size(); ++i) {
 		double	p = 1.0;
 		for(size_t k = 0; k < combs.size(); ++k)
@@ -75,8 +78,8 @@ vector<ClassifyRecord::GTComb> ClassifyRecord::filter_pairs(
 	return combs;
 }
 
-WrongType ClassifyRecord::select_wrong_type(ParentComb comb,
-											int mat_gt, int pat_gt) const {
+WrongType ClassifyRecord::select_wrong_type(ParentComb comb, int mat_gt,
+											int pat_gt, bool one_parent) const {
 	if(TypeDeterminer::is_same_parent_gts(comb)) {
 		const int	gt = TypeDeterminer::int_gt_pair(comb).first;
 		if(mat_gt == gt && pat_gt == gt)
@@ -89,10 +92,10 @@ WrongType ClassifyRecord::select_wrong_type(ParentComb comb,
 		const int	avoiding_gt = TypeDeterminer::get_avoiding_gt(comb);
 		if(mat_gt == pat_gt)
 			return WrongType::UNMODIFIABLE;
-		else if(mat_gt == -1 && (pat_gt != -1 && pat_gt != avoiding_gt))
-			return WrongType::MODIFIABLE;
-		else if(pat_gt == -1 && (mat_gt != -1 && mat_gt != avoiding_gt))
-			return WrongType::MODIFIABLE;
+		else if((mat_gt == -1 && (pat_gt != -1 && pat_gt != avoiding_gt)) ||
+				(pat_gt == -1 && (mat_gt != -1 && mat_gt != avoiding_gt))) {
+			return one_parent ? WrongType::RIGHT : WrongType::MODIFIABLE;
+		}
 		else if(mat_gt != avoiding_gt && pat_gt != avoiding_gt)
 			return WrongType::RIGHT;
 		else
@@ -109,9 +112,10 @@ bool ClassifyRecord::is_matched(int mat_gt, int pat_gt, ParentComb comb) const {
 std::pair<ParentComb, WrongType> ClassifyRecord::select_pair(
 												vector<GTComb>& combs,
 												int mat_gt, int pat_gt) const {
-	// combsの中に確率が大きいものがあり、それ以外は小さければ、それだけにする
+	// If one of the combs has a high probability and the others are small,
+	// only that comb is used.
 	if(combs.size() >= 2) {
-		std::sort(combs.begin(), combs.end());	// 確率でソート
+		std::sort(combs.begin(), combs.end());	// sort by probabilities
 		vector<double>	ps;
 		for(auto p = combs.begin(); p != combs.end(); ++p) {
 			ps.push_back(p->first);
@@ -129,11 +133,16 @@ std::pair<ParentComb, WrongType> ClassifyRecord::select_pair(
 	
 	const ParentComb	comb = combs.front().second;
 	if(is_matched(mat_gt, pat_gt, comb))
+		// If the most probable Genotype pair matches the original Genotypes,
+		// it is determined to be that Genotype pair
 		return make_pair(comb, WrongType::RIGHT);
-	else if(mat_gt == pat_gt)	// どちらが正しいのかわからない
+	else if(mat_gt == pat_gt)
+		// I don't know which of my parents' genotypes is correct.
 		return make_pair(ParentComb::PNA, WrongType::MIX);
 	
-	// 最も優先順位が高いペアだけ片方だけ合っているなら修正可能
+	// If the most probable Genotype pair matches only one Genotype
+	// and no other Genotype pair matches the original Genotypes,
+	// the pair can be modified.
 	vector<bool>	bs;
 	for(auto p = combs.begin(); p != combs.end(); ++p) {
 		const auto	gt_pair = TypeDeterminer::int_gt_pair(p->second);
@@ -147,14 +156,15 @@ std::pair<ParentComb, WrongType> ClassifyRecord::select_pair(
 
 pair<ParentComb, WrongType> ClassifyRecord::classify_record_core(
 												const vector<GTComb>& pairs_,
-												int mat_gt, int pat_gt) const {
+												int mat_gt, int pat_gt,
+												bool one_parent) const {
 	if(pairs_.size() == 0)
 		return make_pair(ParentComb::PNA, WrongType::UNSPECIFIED);
 	
 	auto	combs = filter_pairs(pairs_);
 	if(combs.size() == 1) {
 		const ParentComb	p = combs.front().second;
-		return make_pair(p, select_wrong_type(p, mat_gt, pat_gt));
+		return make_pair(p, select_wrong_type(p, mat_gt, pat_gt, one_parent));
 	}
 	else {
 		return select_pair(combs, mat_gt, pat_gt);

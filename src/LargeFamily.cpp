@@ -5,7 +5,7 @@
 #include "../include/VCFJunkRecord.h"
 #include "../include/VCFHomoHomo.h"
 #include "../include/VCFHeteroHeteroLite.h"
-#include "../include/Pedigree.h"
+#include "../include/KnownFamily.h"
 #include "../include/Map.h"
 #include "../include/option.h"
 #include "../include/common.h"
@@ -15,18 +15,52 @@ using namespace std;
 
 //////////////////// LargeFamily ////////////////////
 
+VCFHeteroHomoRecord *LargeFamily::create_heterohomo_record(const STRVEC& v,
+										const KnownFamily *family, size_t i,
+										WrongType wrong_type, ParentComb pc) {
+	const STRVEC&	samples = family->get_samples();
+	const int	total_int_gt = pc == ParentComb::P00x01 ? 1 : 3;
+	if(!family->is_mat_known()) {
+		const int	pat_int_gt = Genotype::get_int_gt(v[10]);
+		const int	mat_int_gt = total_int_gt - pat_int_gt;
+		if(mat_int_gt < 0 || 2 < mat_int_gt)
+			wrong_type = WrongType::MODIFIABLE;
+		else {
+			STRVEC	w(v.size());
+			std::copy(v.begin(), v.end(), w.begin());
+			w[9] = Genotype::int_to_gt(mat_int_gt);
+			return new VCFHeteroHomoRecord(w, samples, i, wrong_type, pc);
+		}
+	}
+	else if(!family->is_pat_known()) {
+		const int	mat_int_gt = Genotype::get_int_gt(v[9]);
+		const int	pat_int_gt = total_int_gt - mat_int_gt;
+		if(pat_int_gt < 0 || 2 < pat_int_gt)
+			wrong_type = WrongType::MODIFIABLE;
+		else {
+			STRVEC	w(v.size());
+			std::copy(v.begin(), v.end(), w.begin());
+			w[10] = Genotype::int_to_gt(pat_int_gt);
+			return new VCFHeteroHomoRecord(w, samples, i, wrong_type, pc);
+		}
+	}
+	
+	return new VCFHeteroHomoRecord(v, samples, i, wrong_type, pc);
+}
+
 void LargeFamily::classify_record(size_t i, const VCFFamily *vcf,
 								  const TypeDeterminer *td,
+								  const KnownFamily *family,
 								  vector<VCFHeteroHomoRecord *>& heho_records,
 								  vector<VCFImpFamilyRecord *>& other_records) {
 	ClassifyRecord	*CR = ClassifyRecord::get_instance();
 	VCFFamilyRecord	*record = vcf->get_family_record(i);
-	const auto	pair1 = CR->classify(record, td);
+	const auto	pair1 = CR->classify(record, td, family->is_one_unknown());
 	const ParentComb	pc = pair1.first;
 	const WrongType	wrong_type = pair1.second;
 	const STRVEC&	v = record->get_v();
 	const STRVEC&	samples = record->get_samples();
-	if(pc == ParentComb::PNA) {		// 候補が無い
+	if(pc == ParentComb::PNA) {		// no candidates
 		other_records[i] = new VCFJunkRecord(v, samples, i, wrong_type);
 	}
 	else if(TypeDeterminer::is_homohomo(pc)) {
@@ -36,8 +70,8 @@ void LargeFamily::classify_record(size_t i, const VCFFamily *vcf,
 		other_records[i] = r;
 	}
 	else if(TypeDeterminer::is_heterohomo(pc)) {
-		heho_records[i] = new VCFHeteroHomoRecord(v, samples, i,
-													wrong_type, pc);
+		heho_records[i] = create_heterohomo_record(v, family,
+													i, wrong_type, pc);
 	}
 	else {
 		other_records[i] = new VCFHeteroHeteroLiteRecord(v, samples, i,
@@ -49,16 +83,14 @@ void LargeFamily::classify_records_in_thread(void *config) {
 	auto	*c = (ConfigThreadClassify *)config;
 	const size_t	n = c->vcf->size();
 	for(size_t i = c->first; i < n; i += c->num_threads) {
-		classify_record(i, c->vcf, c->td,
+		classify_record(i, c->vcf, c->td, c->family,
 							c->heho_records, c->other_records);
 	}
 }
 
-// HeteroHomoだけ別にする
-// このあとHeteroHomoだけ補完するから
-// その他はVCFFillableにした後補完する
 pair<vector<VCFHeteroHomoRecord *>, vector<VCFImpFamilyRecord *>>
-LargeFamily::classify_records(const VCFFamily *vcf, const Option *option) {
+LargeFamily::classify_records(const VCFFamily *vcf,
+							  const KnownFamily *family, const Option *option) {
 	const size_t	N = vcf->size();
 	vector<VCFHeteroHomoRecord *>	heho_records(N, NULL);
 	vector<VCFImpFamilyRecord *>	other_records(N, NULL);
@@ -69,7 +101,7 @@ LargeFamily::classify_records(const VCFFamily *vcf, const Option *option) {
 	
 	vector<ConfigThreadClassify *>	configs(T);
 	for(int i = 0; i < T; ++i)
-		configs[i] = new ConfigThreadClassify(i, T, vcf, td,
+		configs[i] = new ConfigThreadClassify(i, T, vcf, td, family,
 											  heho_records, other_records);
 	
 #ifndef DEBUG
@@ -94,22 +126,22 @@ void LargeFamily::create_vcf_in_thread(void *config) {
 	auto	*c = (ConfigThreadCreate *)config;
 	const VCFSmall	*orig_vcf = c->orig_vcf;
 	for(size_t i = c->first; i < c->families.size(); i += c->num_threads) {
-		const Family	*family = c->families[i];
+		const KnownFamily	*family = c->families[i];
 		c->results[i] = VCFFamily::create(orig_vcf, family->get_samples());
 	}
 }
 
 vector<VCFFamily *> LargeFamily::create_family_vcfs(
 								const VCFSmall *orig_vcf,
-								const vector<const Family *>& large_families,
+								const vector<const KnownFamily *>& families,
 								int num_threads) {
-	const size_t	N = large_families.size();
+	const size_t	N = families.size();
 	vector<VCFFamily *>	vcfs_family(N, NULL);
 	const int	T = std::min((int)N, num_threads);
 	vector<ConfigThreadCreate *>	configs(T);
 	for(int i = 0; i < T; ++i)
 		configs[i] = new ConfigThreadCreate(i, T, orig_vcf,
-											large_families, vcfs_family);
+											families, vcfs_family);
 	
 #ifndef DEBUG
 	vector<pthread_t>	threads_t(T);
@@ -131,7 +163,7 @@ vector<VCFFamily *> LargeFamily::create_family_vcfs(
 
 vector<pair<string, vector<pair<size_t, size_t>>>>
 LargeFamily::collect_same_parent_families(
-								const vector<const Family *>& families) {
+								const vector<const KnownFamily *>& families) {
 	// { parent: [(family index, parent index)] }
 	map<string, vector<pair<size_t, size_t>>>	dic;
 	for(size_t i = 0; i < families.size(); ++i) {
@@ -180,14 +212,12 @@ void LargeFamily::modify_00x11_each(
 	}
 }
 
-// 0/0 x 1/1のrecordで別の家系の親になっているとき、
-// 他のホモ×ホモやヘテロ×ホモとGenotypeが違うとき、修正する
 // When a parent of record with 0/0 x 1/1 parents is one of another family,
 // correct if the genotype is different from other Homo x Homo or Hetero x Homo
 void LargeFamily::modify_00x11(
 					vector<vector<VCFHeteroHomoRecord *>>& heho_recordss,
 				 	vector<vector<VCFImpFamilyRecord *>>& other_recordss,
-				 	const vector<const Family *>& families) {
+				 	const vector<const KnownFamily *>& families) {
 	auto	fams = collect_same_parent_families(families);
 	for(auto p = fams.begin(); p != fams.end(); ++p) {
 		auto	v = p->second;
@@ -208,12 +238,14 @@ pair<vector<vector<VCFHeteroHomoRecord *>>,
 	 vector<vector<VCFImpFamilyRecord *>>>
 LargeFamily::divide_vcf_into_record_types(
 								const vector<VCFFamily *>& family_vcfs,
+								const vector<const KnownFamily *>& families,
 								const Option *option) {
 	vector<vector<VCFHeteroHomoRecord *>>	heho_recordss;
 	vector<vector<VCFImpFamilyRecord *>>	other_recordss;
-	for(auto p = family_vcfs.begin(); p != family_vcfs.end(); ++p) {
-		auto	*vcf = *p;
-		auto	pair1 = classify_records(vcf, option);
+	for(size_t i = 0; i < family_vcfs.size(); ++i) {
+		auto	*vcf = family_vcfs[i];
+		auto	*family = families[i];
+		auto	pair1 = classify_records(vcf, family, option);
 		auto	heho_records = pair1.first;
 		auto	other_records = pair1.second;
 		heho_recordss.push_back(heho_records);
@@ -236,7 +268,8 @@ void LargeFamily::fill_in_thread(void *config) {
 vector<VCFFillable *> LargeFamily::fill_vcf(
 					const map<string, vector<VCFHeteroHomo *>>& dic_vcfs,
 					const vector<vector<VCFImpFamilyRecord *>>& other_recordss,
-					const vector<const Family *>& families, int num_threads) {
+					const vector<const KnownFamily *>& families,
+					int num_threads) {
 	// collect vcf by family index
 	const size_t	N = families.size();
 	map<pair<string, string>, size_t>	family_indices;
@@ -306,31 +339,31 @@ void LargeFamily::clean_in_thread(void *config) {
 }
 
 VCFSmall *LargeFamily::correct_large_family_VCFs(
-								const VCFSmall *orig_vcf,
-								const vector<const Family *>& large_families,
-								const Map& geno_map, const Option *option) {
+									const VCFSmall *orig_vcf,
+									const vector<const KnownFamily *>& families,
+									const Map& geno_map, const Option *option) {
 	const int	num_threads = option->num_threads;
 	// create a VCF for each large family
 	const auto	family_vcfs = create_family_vcfs(orig_vcf,
-												large_families, num_threads);
+												families, num_threads);
 	// classify records
-	auto	p = divide_vcf_into_record_types(family_vcfs, option);
+	auto	p = divide_vcf_into_record_types(family_vcfs, families, option);
 	auto&	heho_recordss = p.first;
 	auto&	other_recordss = p.second;
 	
 	// We have to deal with it all together
 	// because we coordinate between families.
-	modify_00x11(heho_recordss, other_recordss, large_families);
+	modify_00x11(heho_recordss, other_recordss, families);
 	
 	// impute VCFs by family
-	const size_t	LN = large_families.size();
+	const size_t	LN = families.size();
 	vector<vector<VCFHeteroHomo *>>	vcfss(LN);
 	vector<vector<VCFHeteroHomoRecord *>>	unused_recordss(LN);
 	const int	T = min((int)LN, num_threads);
 	vector<ConfigThreadClean *>	configs(T);
 	for(int i = 0; i < T; ++i)
 		configs[i] = new ConfigThreadClean(i, T, heho_recordss,
-										   orig_vcf, large_families,
+										   orig_vcf, families,
 										   geno_map, vcfss, unused_recordss);
 	
 #ifndef DEBUG
@@ -348,7 +381,7 @@ VCFSmall *LargeFamily::correct_large_family_VCFs(
 	
 	Common::delete_all(configs);
 	
-	for(size_t i = 0; i < large_families.size(); ++i) {
+	for(size_t i = 0; i < families.size(); ++i) {
 		auto&	others = other_recordss[i];
 		const auto&	unused = unused_recordss[i];
 		compress_records(others);
@@ -359,9 +392,9 @@ VCFSmall *LargeFamily::correct_large_family_VCFs(
 	
 	// collect VCFs by parent and decide phasing
 	map<string, vector<VCFHeteroHomo *>>	dic_vcfs;
-	for(size_t i = 0; i < large_families.size(); ++i) {
+	for(size_t i = 0; i < families.size(); ++i) {
 		auto	vcfs = vcfss[i];
-		const Family	*family = large_families[i];
+		const Family	*family = families[i];
 		for(auto p = vcfs.begin(); p != vcfs.end(); ++p) {
 			auto	*vcf = *p;
 			if(vcf->size() == 0) {
@@ -383,8 +416,8 @@ VCFSmall *LargeFamily::correct_large_family_VCFs(
 	}
 	
 	auto	vcfs_filled = fill_vcf(dic_vcfs, other_recordss,
-									large_families, option->num_threads);
-	for(size_t i = 0; i < large_families.size(); ++i) {
+										families, option->num_threads);
+	for(size_t i = 0; i < families.size(); ++i) {
 		Common::delete_all(vcfss[i]);
 		Common::delete_all(other_recordss[i]);
 	}

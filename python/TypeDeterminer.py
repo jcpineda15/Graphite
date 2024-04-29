@@ -6,8 +6,44 @@ from __future__ import annotations
 from itertools import product, count
 from collections import defaultdict
 from queue import PriorityQueue
-
+from enum import Enum
 from typing import Dict, Generator
+
+
+#################### ParentComb ####################
+
+class ParentComb(Enum):
+	P00x00 = 0
+	P00x01 = 1
+	P01x01 = 2
+	P00x11 = 3
+	P01x11 = 4
+	P11x11 = 5
+	PNA = 6
+	
+	def is_NA(self) -> bool:
+		return self == ParentComb.PNA
+	
+	def is_homohomo(self) -> bool:
+		return self in (ParentComb.P00x00, ParentComb.P00x11, ParentComb.P11x11)
+	
+	def is_heterohomo(self) -> bool:
+		return self in (ParentComb.P00x01, ParentComb.P01x11)
+	
+	def is_same_parent_genotype(self):
+		return self in (ParentComb.P00x00, ParentComb.P01x01, ParentComb.P11x11)
+	
+	def int_gt_pair(self) -> tuple[int, int]:
+		p = self.value
+		if p == 0:
+			return (0, 0)
+		elif p < 3:
+			return (p - 1, 1)
+		else:
+			return (p - 3, 2)
+
+
+#################### TypeDeterminer ####################
 
 class TypeDeterminer:
 	def __init__(self, n: int, alpha_: float):
@@ -15,7 +51,7 @@ class TypeDeterminer:
 		self.alpha: float = alpha_
 		# どのGenotypeの組み合わせかを4進で表す
 		# e.g. 0/1 x 1/1 -> 1 + 2*4 = 9
-		self.memo: Dict[tuple[int, int, int], list[tuple[int, float]]] \
+		self.memo: Dict[tuple[int, int, int], list[tuple[ParentComb, float]]] \
 															= defaultdict(list)
 		self.make_memo00()
 		self.make_memo01()
@@ -45,18 +81,20 @@ class TypeDeterminer:
 	def make_memo00(self):
 		# 全部同じになるはずのパターンはその他が2割まで
 		for num_NA, n1, n2 in TypeDeterminer.gen_errors(self.N//5, 3):
-			self.memo[(self.N - n1 - n2 - num_NA, n1, n2)].append((0, 0.0))
+			n0 = self.N - n1 - n2 - num_NA
+			self.memo[(n0, n1, n2)].append((ParentComb.P00x00, 0.0))
 	
 	def make_memo01(self):
 		for num_NA, n2 in TypeDeterminer.gen_error_combinations(self.N, 2):
 			M = self.N - num_NA - n2
 			ps = self.binomial(M)
 			for n0, p in ps:
-				self.memo[(n0, M-n0, n2)].append((1, p))
+				self.memo[(n0, M-n0, n2)].append((ParentComb.P00x01, p))
 	
 	def make_memo02(self):
 		for num_NA, n0, n2 in TypeDeterminer.gen_errors(self.N//5, 3):
-			self.memo[(n0, self.N - n0 - n2 - num_NA, n2)].append((3, 0.0))
+			n1 = self.N - n0 - n2 - num_NA
+			self.memo[(n0, n1, n2)].append((ParentComb.P00x11, 0.0))
 	
 	# C++と同じ挙動を示すように大きい方が優先するように符号を反転する
 	class PQ:
@@ -84,12 +122,12 @@ class TypeDeterminer:
 			while total_p < 1.0 - self.alpha:
 				p, n1, n2, n3 = pq.get()
 				if n1 == n3:
-					self.memo[(n1, n2, n3)].append((2, total_p))
+					self.memo[(n1, n2, n3)].append((ParentComb.P01x01, total_p))
 					total_p += p
 				else:
 					# n0 > n2なので、n0 < n2の分も考える
-					self.memo[(n1, n2, n3)].append((2, total_p))
-					self.memo[(n3, n2, n1)].append((2, total_p))
+					self.memo[(n1, n2, n3)].append((ParentComb.P01x01, total_p))
+					self.memo[(n3, n2, n1)].append((ParentComb.P01x01, total_p))
 					total_p += p * 2
 				
 				neighbors = TypeDeterminer.neighbor_states((p, n1, n2, n3))
@@ -103,11 +141,12 @@ class TypeDeterminer:
 			M = self.N - num_NA - n0
 			ps = self.binomial(M)
 			for n1, p in ps:
-				self.memo[(n0, n1, M-n1)].append((4, p))
+				self.memo[(n0, n1, M-n1)].append((ParentComb.P01x11, p))
 	
 	def make_memo22(self):
 		for num_NA, n0, n1 in TypeDeterminer.gen_errors(self.N//5, 3):
-			self.memo[(n0, n1, self.N - n0 - n1 - num_NA)].append((5, 0.0))
+			n2 = self.N - n0 - n1 - num_NA
+			self.memo[(n0, n1, n2)].append((ParentComb.P11x11, 0.0))
 	
 	def binomial(self, M: int) -> list[tuple[int, float]]:
 		p: float = 0.5**M
@@ -133,7 +172,8 @@ class TypeDeterminer:
 		self.memo = { ns: sorted(v, key=lambda k: k[1])
 									for ns, v in self.memo.items() }
 	
-	def determine(self, counter: tuple[int,int,int]) -> list[tuple[int, float]]:
+	def determine(self, counter: tuple[int,int,int]
+									) -> list[tuple[ParentComb, float]]:
 		return self.memo.get(counter, [])
 	
 	@staticmethod
@@ -183,12 +223,3 @@ class TypeDeterminer:
 			neighbors.append(TypeDeterminer.create_pqstate(n1+1, n2, n3-1))
 			neighbors.append(TypeDeterminer.create_pqstate(n1, n2+1, n3-1))
 		return neighbors
-	
-	@staticmethod
-	def int_gt_pair(p: int) -> tuple[int, int]:
-		if p == 0:
-			return (0, 0)
-		elif p < 3:
-			return (p - 1, 1)
-		else:
-			return (p - 3, 2)

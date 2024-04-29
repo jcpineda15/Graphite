@@ -5,6 +5,7 @@
 #include "VCFImputable.h"
 
 class Family;
+class KnownFamily;
 
 
 //////////////////// VCFOneParentPhased ////////////////////
@@ -12,7 +13,7 @@ class Family;
 class VCFProgenyPhased : public VCFBase,
 							public VCFFamilyBase, public VCFImputable {
 public:
-	typedef std::pair<const Family *, std::size_t>	PAIR;
+	typedef std::pair<const KnownFamily *, std::size_t>	PAIR;
 	
 	struct ConfigThread {
 		const VCFSmall	*orig_vcf;

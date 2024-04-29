@@ -24,49 +24,79 @@ from VCFHeteroHomoPP import *
 from VCFImpFamily import VCFImpFamilyRecord
 from Map import *
 import ClassifyRecord as CR
-from TypeDeterminer import TypeDeterminer
+from KnownFamily import KnownFamily
+from TypeDeterminer import TypeDeterminer, ParentComb
+from Genotype import Genotype
 from option import *
 from common import *
 
 
 #################### process ####################
 
+def get_int_gt(gt: str) -> int:
+	if gt[0] == '.' or gt[2] == '.':
+		return -1
+	else:
+		return int(gt[0]) + int(gt[2])
+
+def create_heterohomo_record(v: list[str], family: KnownFamily, i: int,
+											wrong_type: str, pair: ParentComb):
+	# 片親が不明の時、Genotypeを補う
+	total_int_gt = 1 if pair == ParentComb.P00x01 else 3
+	if not family.mat_known:
+		pat_int_gt: int = get_int_gt(v[10])
+		mat_int_gt: int = total_int_gt - pat_int_gt
+		if mat_int_gt < 0 or 2 < mat_int_gt:
+			wrong_type = 'Modifiable'
+		else:
+			v[9] = Genotype.int_to_gt(mat_int_gt)
+	elif not family.pat_known:
+		mat_int_gt = get_int_gt(v[9])
+		pat_int_gt = total_int_gt - mat_int_gt
+		if pat_int_gt < 0 or 2 < pat_int_gt:
+			wrong_type = 'Modifiable'
+		else:
+			v[10] = Genotype.int_to_gt(pat_int_gt)
+	return VCFHeteroHomoRecord(v, family.samples(), i, wrong_type, pair)
+
 def classify_record(i: int, vcf: VCFFamily, td: TypeDeterminer,
+							family: KnownFamily,
 							heho_records: list[Optional[VCFHeteroHomoRecord]],
 							other_records: list[Optional[VCFImpFamilyRecord]]):
 	record = vcf.records[i]
 	samples = record.samples
-	wrong_type, pair = CR.classify_record(record, td)
+	wrong_type, pair = CR.classify_record(record, td, family.is_one_unknown())
 	v = vcf.records[i].v
-	if pair == -1:	# 候補が無い
-		other_records[i] = VCFJunkRecord(v, samples, i, wrong_type)
-	elif pair == 0 or pair == 3 or pair == 5:
+	if pair.is_homohomo():
 		record_ = VCFHomoHomoRecord(v, samples, i, wrong_type, pair)
 		other_records[i] = record_.impute()
-	elif pair == 1 or pair == 4:		# 0/0 x 0/1 or 0/1 x 1/1
-		heho_records[i] = VCFHeteroHomoRecord(v, samples, i, wrong_type, pair)
-	else:		# 0/1 x 0/1
+	elif pair.is_heterohomo():
+		heho_records[i] = create_heterohomo_record(v, family, i,
+													wrong_type, pair)
+	elif pair == ParentComb.P01x01:
 		other_records[i] = VCFHeteroHeteroLiteRecord(v, samples, i, wrong_type)
+	else:		# 候補が無い
+		other_records[i] = VCFJunkRecord(v, samples, i, wrong_type)
 
-def classify_records_parallel(v: tuple[VCFFamily, TypeDeterminer,
+def classify_records_parallel(v: tuple[VCFFamily, TypeDeterminer, KnownFamily,
 									   list[Optional[VCFHeteroHomoRecord]],
 									   list[Optional[VCFImpFamilyRecord]],
 									   int, int]):
-	vcf, td, heho_records, other_records, i0, num_threads = v
+	vcf, td, family, heho_records, other_records, i0, num_threads = v
 	for i in range(i0, len(vcf.records), num_threads):
-		classify_record(i, vcf, td, heho_records, other_records)
+		classify_record(i, vcf, td, family, heho_records, other_records)
 
 # HeteroHomoだけ別にする
 # このあとHeteroHomoだけ補完するから
 # その他はVCFFillableにした後補完する
-def classify_records(vcf: VCFFamily,
+def classify_records(vcf: VCFFamily, family: KnownFamily,
 						option: Option) -> tuple[list[VCFHeteroHomoRecord],
 												 list[VCFImpFamilyRecord]]:
 	td = CR.get_typedeterminer(vcf.num_samples()-2, option.ratio)
 	records1: list[Optional[VCFHeteroHomoRecord]] = [None] * len(vcf)
 	records2: list[Optional[VCFImpFamilyRecord]] = [None] * len(vcf)
-	args = [ (vcf, td, records1, records2, i, option.num_threads)
-								for i in range(option.num_threads) ]
+	args = [ (vcf, td, family, records1, records2, i, option.num_threads)
+										for i in range(option.num_threads) ]
 	for arg in args:
 		classify_records_parallel(arg)
 	
@@ -85,7 +115,7 @@ def classify_records(vcf: VCFFamily,
 def create_family_vcf(v: tuple[VCFSmall, Family]) -> VCFFamily:
 	return VCFFamily.create(v[0], v[1].samples())
 
-def create_family_vcfs(orig_vcf: VCFSmall, large_families: list[Family],
+def create_family_vcfs(orig_vcf: VCFSmall, large_families: list[KnownFamily],
 										num_threads: int) -> list[VCFFamily]:
 	v = [ (orig_vcf, family) for family in large_families ]
 	if num_threads > 1:
@@ -95,7 +125,7 @@ def create_family_vcfs(orig_vcf: VCFSmall, large_families: list[Family],
 		family_vcfs = list(map(create_family_vcf, v))
 	return family_vcfs
 
-def collect_same_parent_families(families: list[Family]
+def collect_same_parent_families(families: list[KnownFamily]
 								) -> list[tuple[str, list[tuple[int, int]]]]:
 	dic = defaultdict(list)		# { parent: [(family index, parent index)] }
 	for i, family in enumerate(families):
@@ -106,8 +136,8 @@ def collect_same_parent_families(families: list[Family]
 def sort_records(rs: list[tuple[list[VCFHeteroHomoRecord],
 								list[VCFImpFamilyRecord], int]]
 										) -> list[list[VCFImpFamilyRecord]]:
-	indices1 = [ rs1[-1].index for rs1, _, __ in rs ]
-	indices2 = [ rs2[-1].index for _, rs2, __ in rs ]
+	indices1 = [ rs1[-1].index if rs1 else 0 for rs1, _, __ in rs ]
+	indices2 = [ rs2[-1].index if rs2 else 0 for _, rs2, __ in rs ]
 	max_index = max(indices1 + indices2)
 	recordss: list[list[VCFImpFamilyRecord]] = \
 							[ [] for _ in range(max_index + 1) ]
@@ -116,7 +146,7 @@ def sort_records(rs: list[tuple[list[VCFHeteroHomoRecord],
 			if r1.parents_wrong_type == 'Right':
 				recordss[r1.index].append(r1)
 		for r2 in rs2:
-			if r2.pair in (0, 3, 5):		# Homo x Homo
+			if r2.pair.is_homohomo():
 				recordss[r2.index].append(r2)
 	return recordss
 
@@ -134,7 +164,7 @@ def modify_00x11_each(rs: list[tuple[list[VCFHeteroHomoRecord],
 # 他のホモ×ホモやヘテロ×ホモとGenotypeが違うとき、修正する
 def modify_00x11(heho_recordss: list[list[VCFHeteroHomoRecord]],
 				 other_recordss: list[list[VCFImpFamilyRecord]],
-				 families: list[Family]):
+				 families: list[KnownFamily]):
 	fams = collect_same_parent_families(families)
 	for parent, v in fams:
 		rs = [ (heho_recordss[fam_index], other_recordss[fam_index], p_index)
@@ -142,20 +172,21 @@ def modify_00x11(heho_recordss: list[list[VCFHeteroHomoRecord]],
 		modify_00x11_each(rs)
 
 # divide into hetero x homo and other types
-def divide_vcf_into_record_types(family_vcfs: list[VCFFamily], option: Option
+def divide_vcf_into_record_types(family_vcfs: list[VCFFamily],
+									families: list[KnownFamily], option: Option
 									) -> tuple[list[list[VCFHeteroHomoRecord]],
 											   list[list[VCFImpFamilyRecord]]]:
 	heho_recordss: list[list[VCFHeteroHomoRecord]] = []
 	other_recordss: list[list[VCFImpFamilyRecord]] = []
-	for vcf in family_vcfs:
-		heho_records, other_records = classify_records(vcf, option)
+	for vcf, family in zip(family_vcfs, families):
+		heho_records, other_records = classify_records(vcf, family, option)
 		heho_recordss.append(heho_records)
 		other_recordss.append(other_records)
 	return (heho_recordss, other_recordss)
 
 def fill_vcf(dic_vcfs: dict[str, list[VCFHeteroHomo]],
 						other_recordss: list[list[VCFImpFamilyRecord]],
-						families: list[Family]) -> list[VCFFillable]:
+						families: list[KnownFamily]) -> list[VCFFillable]:
 	# 同じ家系でまとめる
 	family_indices = { family.parents(): i
 							for i, family in enumerate(families) }
@@ -169,14 +200,15 @@ def fill_vcf(dic_vcfs: dict[str, list[VCFHeteroHomo]],
 	return [ VCFFillable.fill(vcfs, other_records)
 				for vcfs, other_records in zip(vcfss_heho, other_recordss) ]
 
-def correct_large_family_VCFs(orig_vcf: VCFSmall, large_families: list[Family],
-									geno_map: Map, option: Option) -> VCFSmall:
+def correct_large_family_VCFs(orig_vcf: VCFSmall,
+							  large_families: list[KnownFamily],
+							  geno_map: Map, option: Option) -> VCFSmall:
 	num_threads = option.num_threads
 	# create a VCF for each large family
 	family_vcfs = create_family_vcfs(orig_vcf, large_families, num_threads)
 	# classify records
-	heho_recordss, other_recordss = divide_vcf_into_record_types(
-															family_vcfs, option)
+	heho_recordss, other_recordss = divide_vcf_into_record_types(family_vcfs,
+														large_families, option)
 	# 家系間で調整するから家系をまとめて処理しなければならない
 	modify_00x11(heho_recordss, other_recordss, large_families)
 	
@@ -203,7 +235,8 @@ def correct_large_family_VCFs(orig_vcf: VCFSmall, large_families: list[Family],
 			else:
 				dic_vcfs[family.pat].append(vcf)
 	
-	for vcfs in dic_vcfs.values():
+	v = sorted(dic_vcfs.items())
+	for parent, vcfs in v:
 		VCFHeteroHomo.inverse_phases(vcfs)
 	
 	filled_vcfs = fill_vcf(dic_vcfs, other_recordss, large_families)

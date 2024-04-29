@@ -5,7 +5,8 @@ from __future__ import annotations
 # selfのときのみimputeするバージョンを使う
 
 from VCFFamily import *
-from VCFImpFamily import VCFImpFamilyRecord
+from VCFImpFamily import FillType, VCFImpFamilyRecord
+from TypeDeterminer import ParentComb
 
 
 #################### VCFHeteroHeteroLiteRecord ####################
@@ -13,13 +14,14 @@ from VCFImpFamily import VCFImpFamilyRecord
 class VCFHeteroHeteroLiteRecord(VCFImpFamilyRecord):
 	def __init__(self, v: list[str], samples: list[str],
 								index: int, parents_wrong_type: str):
-		super().__init__(v, samples, index, parents_wrong_type, 2)
+		super().__init__(v, samples, index,
+								parents_wrong_type, ParentComb.P01x01)
 	
 	def is_imputable(self) -> bool:
 		return False
 	
-	def get_fill_type(self) -> str:
-		return 'IMPUTABLE'
+	def get_fill_type(self) -> FillType:
+		return FillType.IMPUTABLE
 
 
 #################### VCFHeteroHeteroLite ####################

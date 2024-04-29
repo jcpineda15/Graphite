@@ -71,9 +71,8 @@ class VCFRecord(object):
 		gt = self.v[i+9]
 		return gt[0] != '.' and gt[0] != gt[2]
 	
-	# for compatibility
-	def get_gt(self, i: int) -> int:
-		return self.get_int_gt(i)
+	def get_gt(self, i: int) -> str:
+		return self.v[i+9]
 	
 	def write(self, out: IO):
 		write_tsv(self.v, out)
@@ -233,6 +232,16 @@ class VCFSmallBase(ABC):
 			c = gt[side*2]
 			hap.append(-1 if c == '.' else int(c))
 		return hap
+	
+	def write_header(self, out: IO):
+		for v in self.get_header():
+			write_tsv(v, out)
+	
+	def write(self, out: IO, with_header: bool=True):
+		if with_header:
+			self.write_header(out)
+		for i in range(len(self)):
+			self.get_record(i).write(out)
 
 
 #################### VCFSmall ####################
@@ -258,12 +267,6 @@ class VCFSmall(VCFBase, VCFSmallBase):
 	def divide_into_chromosomes(self) -> Iterator[VCFSmall]:
 		for chr, v in groupby(self.records, key=VCFRecord.chrom):
 			yield VCFSmall(self.header, list(v))
-	
-	def write(self, out: IO, with_header: bool=True):
-		if with_header:
-			self.write_header(out)
-		for record in self.records:
-			record.write(out)
 	
 	@staticmethod
 	def read(path: str) -> VCFSmall:

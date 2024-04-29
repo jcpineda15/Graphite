@@ -42,5 +42,8 @@ void display_chromosome_info(const VCFSmall *orig_vcf);
 VCFSmall *impute_vcf_chr(const VCFSmall *vcf, SampleManager *sample_man,
 								const Map& geno_map, const Option *option);
 void print_info(const Option *option);
+void impute_all(VCFHuge *vcf, const Materials *materials, const Option *option);
+void impute_progenies(VCFHuge *vcf, const Materials *materials,
+												const Option *option);
 void impute_VCF(const Option *option);
 #endif

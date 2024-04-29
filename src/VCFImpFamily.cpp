@@ -14,7 +14,7 @@ void VCFImpFamilyRecord::set_00x11_parents(int i, int gt) {
 	this->set_GT(i, gt1);
 	this->set_GT(j, gt2);
 	
-	// 親を入れ替えたら子どものGenotypeも変えなければならない
+	// If the parent's genotypes are swapped, change the progenies' genotypes.
 	const string	progeny_GT = (i == 0) ^ (gt == 2) ? "0|1" : "1|0";
 	for(int k = 2; k < (int)num_samples(); ++k)
 		this->set_GT(k, progeny_GT);
@@ -44,7 +44,7 @@ size_t VCFImpFamilyRecord::find_fixed_index(
 				const vector<std::pair<int, vector<RecordWithPos>>>& items) {
 	size_t	all_fixed_index = string::npos;
 	for(auto p = items.begin(); p != items.end(); ++p) {
-		// 0: 全部fixed 1: 全部fixedでない 2: それ以外
+		// 0: all fixed 1: all not fixed 2: otherwise
 		const int	records_type = get_records_type(p->second);
 		if(records_type == 2)
 			return string::npos;
@@ -68,7 +68,7 @@ VCFImpFamilyRecord::which_is_fixed(const vector<RecordWithPos>& v) {
 		return make_pair(gts.front(), vector<RecordWithPos>());
 	
 	// collect reads in Genotype
-	// ここで./.を無視してもよいはず
+	// ignore ./.
 	map<int, vector<RecordWithPos>>	dic;
 	for(size_t k = 0U; k < v.size(); ++k) {
 		dic[gts[k]].push_back(v[k]);
@@ -76,7 +76,7 @@ VCFImpFamilyRecord::which_is_fixed(const vector<RecordWithPos>& v) {
 	const vector<std::pair<int, vector<RecordWithPos>>>
 	items(dic.begin(), dic.end());
 	
-	// 何番目が全てfixedか
+	// What number is all fixed?
 	const size_t	fixed_index = find_fixed_index(items);
 	if(fixed_index == string::npos)
 		return make_pair(gts.front(), vector<RecordWithPos>());
@@ -100,7 +100,7 @@ VCFImpFamilyRecord::which_is_fixed(const vector<RecordWithPos>& v) {
 
 void VCFImpFamilyRecord::modify_00x11(
 						const vector<VCFImpFamilyRecord *>& records) {
-	// サンプルごとにまとめる
+	// collect records by sample
 	map<string, vector<std::pair<VCFImpFamilyRecord *, int>>>	dic;
 	for(auto p = records.begin(); p != records.end(); ++p) {
 		dic[(*p)->get_samples()[0]].push_back(make_pair(*p, 0));

@@ -31,7 +31,8 @@ public:
 	
 	template<typename T>
 	static std::vector<T *> divide_by_cM(const T *vcf) {
-		// 1cMを超えても10個以内で10cM以内なら塊とみなす
+		// If more than 1 cM but not more than 10 pieces and not more than 10 cM
+		// are considered to be a block
 		std::vector<T *>	vcfs;
 		std::size_t	first = 0;
 		for(std::size_t i = 1; i < vcf->size(); ++i) {
@@ -45,7 +46,12 @@ public:
 	}
 	
 	HaplotypePair impute_cM_each_sample(HaplotypePair prev_hap,
-										std::size_t sample_index, bool exec);
-	void set_haplotype(HaplotypePair hap, std::size_t sample_index);
+										std::size_t sample_index,
+										bool exec, bool modify_genotypes);
+	// phasing, but not correct
+	void set_GT_unmodify(std::size_t i, std::size_t sample_id,
+											const std::string& new_GT);
+	void set_haplotype(HaplotypePair hap, std::size_t sample_index,
+												bool modify_genotypes);
 };
 #endif

@@ -22,6 +22,8 @@ public:
 	InverseGraph() { }
 	~InverseGraph() { }
 	
+	InverseGraph *copy() const;
+	
 	///// virtual methods for GraphBase /////
 	std::vector<Node> collect_nodes() const;
 	std::vector<Node> neighbors(Node v0) const;
@@ -34,8 +36,15 @@ public:
 private:
 	std::vector<Node> sort_nodes() const;
 	std::map<Node, std::size_t> calc_dic() const;
-	void walk(Node v0, std::vector<Node>& vs,
-										std::set<Node>& visited) const;
+	bool is_leaf(Node v) const;
+	std::pair<InverseGraph *, std::vector<Node>> remove_acyclic_nodes() const;
+	bool is_tree() const;	// assume connected
+	void remove_directed_edge(Node v1, Node v2);
+	void remove_edge(Node v1, Node v2);
+	std::map<Node, bool> decide_inversions_tree() const;
+	void add_removed_nodes(std::map<Node, bool>& dic_bs,
+							const std::vector<Node>& removed_nodes) const;
+	std::map<Node, bool> optimize_inversions_connected_core() const;
 	std::map<Node, bool> search_all() const;
 	int choice_seed() const;
 	std::map<Node, bool> search_randomly() const;

@@ -10,21 +10,22 @@ import random
 import time
 
 from VCFFamily import *
-from VCFImpFamily import VCFImpFamilyRecord
+from VCFImpFamily import FillType, VCFImpFamilyRecord
+from TypeDeterminer import ParentComb
 from Map import *
 import Imputer
 from option import *
 from inverse_graph import *
 from graph import Node
 from invgraph import InvGraph
-from common import flatten, divide_graph_into_connected
+from common import divide_graph_into_connected
 
 
 #################### VCFHeteroHomoRecord ####################
 
 class VCFHeteroHomoRecord(VCFImpFamilyRecord):
 	def __init__(self, v: list[str], samples: list[str],
-							i: int, parents_wrong_type: str, pair: int):
+							i: int, parents_wrong_type: str, pair: ParentComb):
 		super().__init__(v, samples, i, parents_wrong_type, pair)
 		self.which_comes_from: list[int] = [-1] * self.num_progenies()
 	
@@ -37,11 +38,11 @@ class VCFHeteroHomoRecord(VCFImpFamilyRecord):
 	def is_imputable(self) -> bool:
 		return self.parents_wrong_type == 'Right'
 	
-	def get_fill_type(self) -> str:
+	def get_fill_type(self) -> FillType:
 		if self.is_imputable():
-			return 'MAT' if self.is_mat_hetero() else 'PAT'
+			return FillType.MAT if self.is_mat_hetero() else FillType.PAT
 		else:
-			return 'IMPUTABLE'
+			return FillType.IMPUTABLE
 	
 	def genotypes_from_hetero_parent(self) -> list[int]:
 		def encode(gt, homo_parent):
@@ -242,7 +243,7 @@ class VCFHeteroHomo(VCFBase, VCFSmallBase, VCFFamilyBase, VCFMeasurable):
 			return create_same_color_string(seq)
 		
 		hidden_states = ['0', '1']
-		states = [ s for s in ['0', '1', 'N'] if s in seq ]
+		states = ['0', '1', 'N']
 		hidden_seq = Imputer.impute(seq, hidden_states, states, cMs)
 		painted_seq = Imputer.paint(hidden_seq, cMs, min_c)
 		return painted_seq

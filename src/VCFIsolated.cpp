@@ -9,9 +9,11 @@ using namespace std;
 //////////////////// VCFIsolated ////////////////////
 
 VCFIsolated::VCFIsolated(const vector<STRVEC>& h, const STRVEC& s,
-							vector<VCFRecord *> rs, size_t nis, const Map& m) :
+							vector<VCFRecord *> rs, size_t nis,
+							const Map& m, bool mg) :
 									VCFBase(h, s), VCFImputable(m),
-									records(rs), num_imputed_samples(nis)  { }
+									records(rs), num_imputed_samples(nis),
+									modify_genotypes(mg) { }
 
 VCFIsolated::~VCFIsolated() {
 	for(auto p = records.begin(); p != records.end(); ++p)
@@ -40,8 +42,8 @@ vector<Haplotype> VCFIsolated::collect_haplotypes_pat(
 VCFIsolated *VCFIsolated::divide_by_positions(size_t first, size_t last) const {
 	vector<VCFRecord *>	sub_records(records.begin() + first,
 									records.begin() + last);
-	return new VCFIsolated(get_header(), get_samples(),
-							sub_records, num_imputed_samples, get_map());
+	return new VCFIsolated(get_header(), get_samples(), sub_records,
+							num_imputed_samples, get_map(), modify_genotypes);
 }
 
 vector<HaplotypePair> VCFIsolated::impute_cM(
@@ -49,7 +51,8 @@ vector<HaplotypePair> VCFIsolated::impute_cM(
 	vector<HaplotypePair>	haps;
 	for(size_t i = 0; i < prev_haps.size(); ++i) {
 		const auto	prev_hap = prev_haps[i];
-		const auto	hap = this->impute_cM_each_sample(prev_hap, i, true);
+		const auto	hap = this->impute_cM_each_sample(prev_hap, i, true,
+															modify_genotypes);
 		haps.push_back(hap);
 	}
 	return haps;
@@ -77,7 +80,9 @@ vector<VCFIsolated *> VCFIsolated::create(const VCFSmall *orig_vcf,
 											const VCFSmall *imputed_vcf,
 											const STRVEC& samples,
 											const STRVEC& references,
-											const Map& gmap, int num_threads) {
+											const Map& gmap,
+											bool modify_genotypes,
+											int num_threads) {
 	const auto	sample_columns = orig_vcf->extract_columns(samples);
 	const auto	ref_columns = imputed_vcf->extract_columns(references);
 	const auto	column_table = divide_columns(sample_columns, num_threads);
@@ -91,9 +96,9 @@ vector<VCFIsolated *> VCFIsolated::create(const VCFSmall *orig_vcf,
 							references.begin(), references.end());
 		const auto	header = orig_vcf->trim_header(new_samples);
 		vector<VCFRecord *>	records;
-		// samplesをVCFに持たせるため、先にVCFを作って、後でRecordを追加する
-		VCFIsolated	*vcf = new VCFIsolated(header, new_samples,
-												records, cs.size(), gmap);
+		// Create VCF first and add Record later to have samples in VCF
+		VCFIsolated	*vcf = new VCFIsolated(header, new_samples, records,
+											cs.size(), gmap, modify_genotypes);
 		for(size_t i = 0; i < orig_vcf->size(); ++i) {
 			VCFRecord	*record = orig_vcf->get_record(i);
 			VCFRecord	*imputed_record = imputed_vcf->get_record(i);

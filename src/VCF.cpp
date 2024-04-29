@@ -25,16 +25,6 @@ STRVEC VCFRecord::gts() const {
 	return w;
 }
 
-int VCFRecord::get_int_gt(size_t i) const {
-	const string&	s = v[i+9];
-	try {
-		return stoi(s.substr(0U, 1U)) + stoi(s.substr(2U, 1U));
-	}
-	catch(std::invalid_argument& e) {
-		return -1;
-	}
-}
-
 #include <cassert>
 vector<int> VCFRecord::get_int_gts() const {
 	vector<int>	w(samples.size());
@@ -250,6 +240,19 @@ VCFSmall *VCFSmallBase::extract_samples(const STRVEC& samples) const {
 	return vcf;
 }
 
+void VCFSmallBase::write(ostream& os, bool write_header) const {
+	if(write_header)
+		this->write_header(os);
+	for(size_t i = 0; i < size(); ++i)
+		get_record(i)->write(os);
+}
+
+void VCFSmallBase::write_header(ostream& os) const {
+	const auto&	header = get_header();
+	for(auto p = header.begin(); p != header.end(); ++p)
+		Common::write_tsv(*p, os);
+}
+
 
 //////////////////// VCFSmall ////////////////////
 
@@ -265,13 +268,6 @@ VCFSmall::~VCFSmall() {
 		for(auto p = records.begin(); p != records.end(); ++p)
 			delete *p;
 	}
-}
-
-void VCFSmall::write(ostream& os, bool write_header) const {
-	if(write_header)
-		this->write_header(os);
-	for(auto p = records.begin(); p != records.end(); ++p)
-		(*p)->write(os);
 }
 
 VCFSmall *VCFSmall::read(const string& path) {
@@ -393,7 +389,7 @@ VCFRecord *VCFHuge::next() {
 		return NULL;
 	
 	VCFRecord	*record = new VCFRecord(v, this->samples);
-	this->record_position(*record);		// chrsを更新するために必要
+	this->record_position(*record);		// necessary to update chrs
 	return record;
 }
 

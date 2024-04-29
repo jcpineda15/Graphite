@@ -34,6 +34,4 @@ public:
 public:
 	static std::size_t count_groups(const std::map<Node, std::size_t>& groups);
 };
-
-
 #endif

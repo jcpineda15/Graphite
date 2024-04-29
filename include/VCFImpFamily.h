@@ -1,7 +1,7 @@
 #ifndef __VCFIMPFAMILY
 #define __VCFIMPFAMILY
 
-// 補完できるVCFFamilyの抽象クラス
+// Abstract VCFFamily class that can be imputed
 
 #include <vector>
 

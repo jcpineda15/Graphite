@@ -1,50 +1,42 @@
-from __future__ import annotations
-
 # coding: utf-8
 # common.py
 
-from collections.abc import Iterable
 from collections import defaultdict
 import csv
 import sys
 
-from typing import TypeVar, Any, Generator, IO, Optional, Iterator, Dict
-
 
 #################### I/O ####################
 
-def read_csv(path: str, delim: str=',') -> Generator[list[str], None, None]:
+def read_csv(path, delim=','):
 	with open(path, 'r') as f:
 		reader = csv.reader(f, delimiter=delim)
 		for v in reader:
 			yield v
 
-def read_tsv(path: str) -> Generator[list[str], None, None]:
+def read_tsv(path):
 	for v in read_csv(path, '\t'):
 		yield v
 
-def write_csv(v: list[Any], out: IO):
+def write_csv(v, out):
 	print(','.join(map(str_with_NA, v)), file=out)
 
-def write_tsv(v: list[Any], out: IO):
+def write_tsv(v, out):
 	print('\t'.join(map(str_with_NA, v)), file=out)
 
-def int_with_NA(s: str) -> Optional[int]:
+def int_with_NA(s):
 	try:
 		return int(s)
 	except ValueError:
 		return None
 
-def str_with_NA(e) -> str:
+def str_with_NA(e):
 	if e is None:
 		return 'NA'
 	else:
 		return str(e)
 
-
-#################### list ####################
-
-def is_all_same(xs) -> bool:
+def is_all_same(xs):
 	if all(x is None for x in xs):
 		return True
 	
@@ -58,16 +50,11 @@ def unique_list(*args):
 			v.append(a)
 	return v
 
-T = TypeVar('T', bound=Iterable)
-
-def flatten(v: T) -> list[Any]:
-	w = []
-	for e in v:
-		if isinstance(e, Iterable):
-			w.extend(flatten(e))
-		else:
-			w.append(e)
-	return w
+def classify(iterable):
+	dic = defaultdict(list)
+	for k, v in iterable:
+		dic[k].append(v)
+	return dic
 
 
 #################### graph ####################
@@ -110,15 +97,3 @@ def nearest_vertecies(graph1, graph2):
 	
 	d, v1, v2 = min((abs(v1 - v2), v1, v2) for v1, v2 in product(vs1, vs2))
 	return (v1, v2)
-
-
-#################### others ####################
-
-K = TypeVar('K')
-V = TypeVar('V')
-def classify(iter: Iterator[tuple[K, V]]) -> Dict[K, list[V]]:
-	dic: Dict[K, list[V]] = defaultdict(list)
-	for k, v in iter:
-		dic[k].append(v)
-	return dic
-

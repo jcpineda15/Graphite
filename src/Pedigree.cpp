@@ -114,11 +114,9 @@ vector<const Family *> PedigreeTable::make_families(
 	for(auto p = progs.begin(); p != progs.end(); ++p) {
 		const auto	parents = p->first;
 		const auto	progenies = p->second;
-		// samples(VCF)に無い親は不明扱い
-		const string	mat = set_samples.find(parents.first) !=
-									set_samples.end() ? parents.first : "0";
-		const string	pat = set_samples.find(parents.second) !=
-									set_samples.end() ? parents.second : "0";
+		// Parent not found in samples of VCF is treated as unknown
+		const string	mat = parents.first;
+		const string	pat = parents.second;
 		const Family	*family = new Family(mat, pat, progenies);
 		families.push_back(family);
 	}

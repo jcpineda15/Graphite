@@ -60,7 +60,7 @@ def impute_vcf_by_parent_core(orig_vcf: VCFSmall, merged_vcf: VCFSmall,
 								  if not sample_man.is_imputed(parent) ]
 	
 	# phase not phased parents
-	parents_vcf = impute_iolated_samples(orig_vcf, merged_vcf, sample_man,
+	parents_vcf = impute_isolated_samples(orig_vcf, merged_vcf, sample_man,
 													samples, gmap, num_threads)
 	
 	# merge vcfs
@@ -215,7 +215,7 @@ def impute_small_family_VCFs(orig_vcf: VCFSmall, merged_vcf: VCFSmall,
 	
 	return merged_vcf
 
-def impute_iolated_samples(orig_vcf: VCFSmall, merged_vcf: VCFSmall,
+def impute_isolated_samples(orig_vcf: VCFSmall, merged_vcf: VCFSmall,
 									sample_man: SampleManager,
 									samples: list[str],
 									gmap: Map, num_threads: int) -> VCFSmall:
@@ -231,4 +231,4 @@ def impute_iolated_samples(orig_vcf: VCFSmall, merged_vcf: VCFSmall,
 	new_vcf = VCFSmall.join(new_vcfs, orig_vcf.samples)
 	return new_vcf
 
-__all__ = ['impute_small_family_VCFs', 'impute_iolated_samples']
+__all__ = ['impute_small_family_VCFs', 'impute_isolated_samples']

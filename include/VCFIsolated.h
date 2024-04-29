@@ -26,10 +26,12 @@ public:
 private:
 	std::vector<VCFRecord *>	records;
 	const std::size_t	num_imputed_samples;
+	const bool	modify_genotypes;
 	
 public:
 	VCFIsolated(const std::vector<STRVEC>& h, const STRVEC& s,
-				std::vector<VCFRecord *> rs, std::size_t nis, const Map& m);
+				std::vector<VCFRecord *> rs, std::size_t nis,
+				const Map& m, bool modify_genotypes);
 	~VCFIsolated();
 	
 	///// virtual methods for VFSmallBase /////
@@ -65,7 +67,7 @@ public:
 	static std::vector<VCFIsolated *> create(const VCFSmall *orig_vcf,
 					const VCFSmall *merged_vcf,
 					const STRVEC& samples, const STRVEC& references,
-					const Map& gmap, int num_threads);
+					const Map& gmap, bool modify_genotypes, int num_threads);
 	static std::vector<VCFSmallBase *> impute_all(
 										const std::vector<VCFIsolated *>& vcfs,
 										int num_threads);

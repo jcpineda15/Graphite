@@ -8,24 +8,36 @@ from abc import ABCMeta, abstractmethod
 from functools import reduce
 from collections import defaultdict
 from operator import add, xor
+from enum import Enum
 
 from VCFFamily import *
+from TypeDeterminer import ParentComb
 from common import is_all_same
+
+
+#################### FillType ####################
+
+class FillType(Enum):
+	MAT = 0
+	PAT = 1
+	FILLED = 2
+	IMPUTABLE = 3
+	UNABLE = 4
 
 
 #################### VCFImpFamilyRecord ####################
 
 class VCFImpFamilyRecord(VCFFamilyRecord, metaclass=ABCMeta):
 	def __init__(self, v: list[str], samples: list[str],
-							index: int, parents_wrong_type: str, pair: int):
+						index: int, parents_wrong_type: str, pair: ParentComb):
 		super().__init__(v, samples)
 		self.index: int = index
 		self.parents_wrong_type: str = parents_wrong_type
-		self.pair = pair
+		self.pair: ParentComb = pair
 	
 	def is_fixed(self) -> bool:
-		return (self.pair in (0, 5) or
-				(self.pair in (1, 4) and self.is_right()))
+		return (self.pair in (ParentComb.P00x00, ParentComb.P11x11) or
+				(self.pair.is_heterohomo() and self.is_right()))
 	
 	def is_right(self) -> bool:
 		return self.parents_wrong_type == 'Right'
@@ -51,7 +63,7 @@ class VCFImpFamilyRecord(VCFFamilyRecord, metaclass=ABCMeta):
 		pass
 	
 	@abstractmethod
-	def get_fill_type(self) -> str:
+	def get_fill_type(self) -> FillType:
 		pass
 	
 	# あるGenotypeはfixedのみ、その他はfixed以外
@@ -87,7 +99,7 @@ class VCFImpFamilyRecord(VCFFamilyRecord, metaclass=ABCMeta):
 		
 		# 0/0 x 1/1パターン以外のRecordはあとで直す機会がある
 		wrongs = [ (r, k) for j, item in enumerate(items) if j != fixed_index
-											for r, k in item[1] if r.pair == 3 ]
+							for r, k in item[1] if r.pair == ParentComb.P00x11 ]
 		return (fixed_GT, wrongs)
 	
 	# 子どものGenotypeから0/0 x 1/1と推定される場合、

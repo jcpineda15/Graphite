@@ -24,16 +24,6 @@ namespace Common {
 	std::vector<std::string> merge_vectors(
 								const std::vector<std::string>& v1,
 								const std::vector<std::string>& v2);
-	/*
-	template<typename T>
-	bool is_all_same(const std::vector<T>& v) {
-		for(auto p = v.begin(); p != v.end(); ++p) {
-			if(*p != v.front())
-				return false;
-		}
-		return true;
-	}
-	*/
 	bool is_all_same(const std::string& seq);
 	template<typename T>
 	bool is_all_same(const std::vector<T>& v) {

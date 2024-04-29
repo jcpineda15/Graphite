@@ -90,9 +90,10 @@ InvGraph VCFHeteroHomo::make_graph(double max_dist) const {
 		graph[k];
 	for(size_t k = 0; k < L; ++k) {
 		for(size_t l = k + 1; l < L; ++l) {
-
 			const double	cM = cMs[l] - cMs[k];
-			if(cM > 10.0)	// 10cM以上離れていたら繋がりを見ない
+			// don't see a connection
+			// if the records are more than 10 cM apart
+			if(cM > 10.0)
 				break;
 			const auto	p = distance(gtss[k], gtss[l]);
 			const double	dist = p.first;
@@ -106,7 +107,7 @@ InvGraph VCFHeteroHomo::make_graph(double max_dist) const {
 	return graph;
 }
 
-// ベータ分布を使うので、distはdouble
+// Since beta distribution is used, dist is a double
 pair<double, bool> VCFHeteroHomo::distance(const vector<int>& gts1,
 											const vector<int>& gts2) {
 	const int	N = (int)gts1.size();
@@ -130,13 +131,14 @@ pair<double, bool> VCFHeteroHomo::distance(const vector<int>& gts1,
 		return make_pair(dist_with_NA(counter_diff, counter_NA, N), true);
 }
 
+// beta distribution
 double VCFHeteroHomo::dist_with_NA(int right, int counter_NA, int N) {
 	const int	diff = N - right - counter_NA;
 	const double	diff_ratio = (diff + 1.0) / (right + diff + 2.0);
 	return diff + counter_NA * diff_ratio;
 }
 
-// haplotype1の各レコードのGenotypeが0なのか1なのか
+// decide heterozygous parent haplotypes
 vector<int> VCFHeteroHomo::make_parent_haplotypes(const InvGraph& graph) const {
 	const InvGraph	tree = graph.minimum_spanning_tree();
 	auto	vs = tree.collect_nodes();
@@ -185,6 +187,10 @@ VCFHeteroHomo *VCFHeteroHomo::make_subvcf(const InvGraph& graph) const {
 										records, this->get_map());
 }
 
+bool operator <(const InvGraph& g1, const InvGraph& g2) {
+	return g1.size() < g2.size();
+}
+
 pair<vector<VCFHeteroHomo *>, vector<VCFHeteroHomoRecord *>>
 		VCFHeteroHomo::determine_haplotype(const OptionImpute *option) const {
 	const double	max_dist = std::min((double)option->max_dist,
@@ -204,10 +210,7 @@ pair<vector<VCFHeteroHomo *>, vector<VCFHeteroHomoRecord *>>
 	
 	// keep only the largest graph if there are only small ones
 	if(large_graphs.empty()) {
-		auto	max_g = std::max_element(small_graphs.begin(),
-										 small_graphs.end(),
-											[](const auto& a, const auto& b) {
-												return a.size() < b.size(); });
+		auto	max_g = max_element(small_graphs.begin(), small_graphs.end());
 		large_graphs.push_back(*max_g);
 		small_graphs.erase(max_g);
 	}
@@ -271,10 +274,7 @@ string VCFHeteroHomo::clean_each_sample_seq(size_t i,
 	if(is_all_same_without_N(seq))
 		return create_same_color_string(seq);
 	
-	const vector<char>	hidden_states = { '0', '1' };
-	const vector<char>	states = Imputer::create_states(seq);
-	const string	hidden_seq = Imputer::impute(seq,
-												hidden_states, states, cMs);
+	const string	hidden_seq = Imputer::impute(seq, cMs);
 	const string	painted_seq = Imputer::paint(hidden_seq, cMs, min_c);
 	return painted_seq;
 }
@@ -338,7 +338,8 @@ const OptionImpute *VCFHeteroHomo::create_option(int num_threads) const {
 pair<vector<VCFHeteroHomo *>, vector<VCFHeteroHomoRecord *>>
 										VCFHeteroHomo::clean(int num_threads) {
 	if(this->records.empty()) {
-		// vcfを新たに作らないと、deleteしていけないvcfをdeleteしてしまう
+		// If it do not create a new VCF,
+		// it will delete the VCF that cannot be deleted.
 		VCFHeteroHomo	*empty_vcf = new VCFHeteroHomo(header, samples,
 								vector<VCFHeteroHomoRecord *>(), get_map());
 		return make_pair(vector<VCFHeteroHomo *>(1, empty_vcf),
@@ -357,7 +358,7 @@ pair<vector<VCFHeteroHomo *>, vector<VCFHeteroHomoRecord *>>
 	return make_pair(vcfs, unused_records);
 }
 
-// 共通のヘテロ親はどれだけマッチしているか
+// How well do the common heteroparents match?
 pair<int, int> VCFHeteroHomo::match(const VCFHeteroHomo *other) const {
 	if(this->records.empty() || other->records.empty())
 		return pair<int, int>(0, 0);
@@ -426,8 +427,8 @@ VCFHeteroHomo::make_VCFHeteroHomo(const vector<VCFHeteroHomoRecord *>& records,
 	return make_tuple(vcf_mat, vcf_pat, unused_records);
 }
 
-// ヘテロ親が同じVCFを集めて補完する
-// ついでにphaseもなるべく同じになるように変更する
+// collect VCFs whose hetero parent is the same, and impute it
+// and change the phase to be as same as possible
 ImpResult VCFHeteroHomo::clean_vcfs(
 							const vector<VCFHeteroHomoRecord *>& records,
 							const vector<STRVEC>& header, const STRVEC& samples,
