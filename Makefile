@@ -1,8 +1,8 @@
 CC		= g++
-CFLAGS	= -std=c++14 -O2 -Wall
+CFLAGS	= -O2 -Wall
 LDFLAGS = 
 LIBS	= -lz -lpthread
-PROGRAM = ./graphite
+PROGRAM = ../graphite
 
 SOURCE_DIR = src
 HEADER_DIR = include
